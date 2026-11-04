@@ -230,7 +230,8 @@ final class CanvasView: NSView, NSTextViewDelegate {
     }
 
     private func updatePreview() {
-        preview = session.tool.makeShape(points: dragPoints, style: session.style)
+        preview = session.tool.makeShape(points: dragPoints, style: session.style,
+                                         context: ToolContext(frozen: frozen, displaySize: bounds.size))
         needsDisplay = true
     }
 

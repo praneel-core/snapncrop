@@ -149,7 +149,7 @@ final class OverlayView: NSView {
         case 1 where session.state == .editing && event.modifierFlags.contains(.control):  // Ctrl+S
             session.saveAndClose()
         default:
-            // Tool shortcuts (plain letters while editing): R rectangle, E ellipse, L line, A arrow, P pen, H highlighter, T text, V select
+            // Tool shortcuts (plain letters while editing): R rectangle, E ellipse, L line, A arrow, P pen, H highlighter, T text, V select, B pixelate
             if session.state == .editing, event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
                let key = event.charactersIgnoringModifiers?.lowercased() {
                 switch key {
@@ -161,6 +161,7 @@ final class OverlayView: NSView {
                 case "h": session.setTool(.highlighter); return
                 case "t": session.setTool(.text); return
                 case "v": session.setTool(.select); return
+                case "b": session.setTool(.pixelate); return
                 default: break
                 }
             }

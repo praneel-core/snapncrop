@@ -412,6 +412,69 @@ public struct TextAnnotation: Annotation {
     }
 }
 
+// MARK: - Pixelate (hide sensitive information)
+
+/// What a tool needs to know about the screenshot being annotated (only pixelate uses it).
+public struct ToolContext {
+    public var frozen: CGImage
+    public var displaySize: CGSize      // size of the frozen picture in points
+    public init(frozen: CGImage, displaySize: CGSize) { self.frozen = frozen; self.displaySize = displaySize }
+}
+
+/// Replaces a region with large flat blocks of its average colour. It re-samples the ORIGINAL screenshot,
+/// so the hidden content cannot be recovered from the exported PNG. S/M/L sets the block size.
+public struct BlurAnnotation: Annotation {
+    public let id: UUID
+    public var style: StrokeStyle
+    public var rect: CGRect               // display points
+    let source: CGImage?
+    let displaySize: CGSize
+
+    public init(id: UUID = UUID(), rect: CGRect, style: StrokeStyle, context: ToolContext?) {
+        self.id = id; self.rect = rect; self.style = style
+        self.source = context?.frozen; self.displaySize = context?.displaySize ?? .zero
+    }
+
+    /// Block edge in points: S/M/L -> 6 / 12 / 24.
+    public var blockPoints: CGFloat { max(4, style.width * 3) }
+
+    public func draw(in ctx: CGContext) {
+        guard let src = source, displaySize.width > 0, displaySize.height > 0 else { return }
+        let sx = CGFloat(src.width) / displaySize.width, sy = CGFloat(src.height) / displaySize.height
+        let px = CGRect(x: rect.minX * sx, y: rect.minY * sy, width: rect.width * sx, height: rect.height * sy)
+            .integral.intersection(CGRect(x: 0, y: 0, width: src.width, height: src.height))
+        guard !px.isNull, px.width >= 1, px.height >= 1, let crop = src.cropping(to: px) else { return }
+
+        // Shrink the region to one pixel per block (this averages the colours), then blow it up again
+        // with no smoothing so the blocks stay sharp-edged.
+        let blockPx = max(2, blockPoints * sx)
+        let w = max(1, Int((px.width / blockPx).rounded(.up))), h = max(1, Int((px.height / blockPx).rounded(.up)))
+        guard let small = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                    space: crop.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { return }
+        small.interpolationQuality = .high
+        small.draw(crop, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let blocks = small.makeImage() else { return }
+
+        let target = CGRect(x: px.minX / sx, y: px.minY / sy, width: px.width / sx, height: px.height / sy)
+        ctx.saveGState()
+        ctx.interpolationQuality = .none
+        Drawing.drawTopLeft(blocks, in: target, ctx: ctx)
+        ctx.restoreGState()
+    }
+
+    public var bounds: CGRect { rect }
+    public var frame: CGRect { rect }
+    public mutating func resize(to f: CGRect) { rect = f }
+
+    /// Filled shape: anywhere inside counts.
+    public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
+        rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+    }
+    public mutating func translate(by d: CGSize) { rect = rect.offsetBy(dx: d.width, dy: d.height) }
+}
+
 // MARK: - Working with a list of annotations (select / move / delete)
 
 public enum AnnotationList {
@@ -442,10 +505,11 @@ public enum AnnotationTool: CaseIterable {
     case pen
     case highlighter
     case select    // not a drawing tool: click an annotation to select it, drag to move, Delete removes
+    case pixelate  // hides a region behind blocks (needs the screenshot: see ToolContext)
     case text      // placed by a click, typed inline (see CanvasView); not a drag shape
 
     /// Builds the shape from the mouse path of a drag (first point = mouse down, last = current position).
-    public func makeShape(points: [CGPoint], style: StrokeStyle) -> any Annotation {
+    public func makeShape(points: [CGPoint], style: StrokeStyle, context: ToolContext? = nil) -> any Annotation {
         let a = points.first ?? .zero, b = points.last ?? .zero
         switch self {
         case .rectangle:   return RectAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style)
@@ -454,6 +518,7 @@ public enum AnnotationTool: CaseIterable {
         case .arrow:       return ArrowAnnotation(start: a, end: b, style: style)
         case .pen:         return PenAnnotation(points: points, style: style)
         case .highlighter: return HighlightAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style)
+        case .pixelate:    return BlurAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style, context: context)
         case .text:        return TextAnnotation(origin: a, text: "", style: style)   // placeholder; see CanvasView
         case .select:      return RectAnnotation(rect: .zero, style: style)           // placeholder; never drawn
         }
@@ -467,7 +532,7 @@ public enum AnnotationTool: CaseIterable {
     public func isValid(points: [CGPoint]) -> Bool {
         guard let a = points.first, let b = points.last else { return false }
         switch self {
-        case .rectangle, .ellipse, .highlighter: return abs(a.x - b.x) >= 2 && abs(a.y - b.y) >= 2
+        case .rectangle, .ellipse, .highlighter, .pixelate: return abs(a.x - b.x) >= 2 && abs(a.y - b.y) >= 2
         case .line, .arrow:                      return hypot(a.x - b.x, a.y - b.y) >= 3
         case .pen:                               return true      // even a click leaves a dot
         case .text, .select:                     return false     // never created by dragging

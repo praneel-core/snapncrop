@@ -647,3 +647,76 @@ private func fire(_ d: inout FourFingerTapDetector, _ t: [TouchPoint], _ ts: Dou
         #expect(!Shortcut(keyCode: 9999, modifiers: Shortcut.control).isValid)     // unknown key
     }
 }
+
+
+// MARK: pixelate
+
+private func stripedImage(width: Int, height: Int) -> CGImage {
+    // Alternating black / white pixel columns: maximum fine detail.
+    let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    ctx.setFillColor(red: 1, green: 1, blue: 1, alpha: 1); ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    ctx.setFillColor(red: 0, green: 0, blue: 0, alpha: 1)
+    for x in stride(from: 0, to: width, by: 2) { ctx.fill(CGRect(x: x, y: 0, width: 1, height: height)) }
+    return ctx.makeImage()!
+}
+
+@Suite struct PixelateTests {
+    private let style = StrokeStyle(color: .red, width: 4)       // 12pt blocks
+
+    private func export(_ frozen: CGImage, _ blur: BlurAnnotation) -> CGImage {
+        ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: frozen.width, height: frozen.height),
+                              selectionSize: CGSize(width: frozen.width, height: frozen.height), annotations: [blur])!
+    }
+
+    @Test func fineDetailInsideTheRegionIsDestroyed() {
+        let frozen = stripedImage(width: 100, height: 100)
+        let ctx = ToolContext(frozen: frozen, displaySize: CGSize(width: 100, height: 100))
+        let out = export(frozen, BlurAnnotation(rect: CGRect(x: 20, y: 20, width: 60, height: 60), style: style, context: ctx))
+        // Original neighbouring pixels alternate 0 / 255. After pixelating they sit in one flat block.
+        let a = pixel(out, 41, 50), b = pixel(out, 42, 50)
+        #expect(abs(a.0 - b.0) < 12, "neighbouring pixels should be the same block colour, got \(a) \(b)")
+        #expect(a.0 > 60 && a.0 < 200, "block colour should be the grey average of black and white, got \(a)")
+    }
+
+    @Test func pixelsOutsideTheRegionAreUntouched() {
+        let frozen = stripedImage(width: 100, height: 100)
+        let ctx = ToolContext(frozen: frozen, displaySize: CGSize(width: 100, height: 100))
+        let out = export(frozen, BlurAnnotation(rect: CGRect(x: 20, y: 20, width: 60, height: 60), style: style, context: ctx))
+        let a = pixel(out, 4, 50), b = pixel(out, 5, 50)
+        #expect(abs(a.0 - b.0) > 200, "stripes outside the region must remain, got \(a) \(b)")
+    }
+
+    @Test func blockSizeFollowsTheWidthSetting() {
+        let ctx: ToolContext? = nil
+        #expect(BlurAnnotation(rect: .zero, style: StrokeStyle(color: .red, width: 2), context: ctx).blockPoints == 6)
+        #expect(BlurAnnotation(rect: .zero, style: StrokeStyle(color: .red, width: 8), context: ctx).blockPoints == 24)
+    }
+
+    @Test func worksOnRetinaScaleAndStillCoversTheRightArea() {
+        // 200x200 px image shown as 100x100 pt (2x). Blur the pt rect (10,10,50,50) = px (20,20,100,100).
+        let frozen = stripedImage(width: 200, height: 200)
+        let ctx = ToolContext(frozen: frozen, displaySize: CGSize(width: 100, height: 100))
+        let blur = BlurAnnotation(rect: CGRect(x: 10, y: 10, width: 50, height: 50), style: style, context: ctx)
+        let out = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: 200, height: 200),
+                                        selectionSize: CGSize(width: 100, height: 100), annotations: [blur])!
+        let inside1 = pixel(out, 60, 60), inside2 = pixel(out, 61, 60)
+        #expect(abs(inside1.0 - inside2.0) < 12)
+        let outside1 = pixel(out, 150, 150), outside2 = pixel(out, 151, 150)
+        #expect(abs(outside1.0 - outside2.0) > 200)
+    }
+
+    @Test func toolMovesResizesAndHitTests() {
+        let frozen = stripedImage(width: 100, height: 100)
+        let ctx = ToolContext(frozen: frozen, displaySize: CGSize(width: 100, height: 100))
+        let shape = AnnotationTool.pixelate.makeShape(points: [CGPoint(x: 10, y: 10), CGPoint(x: 50, y: 40)], style: style, context: ctx)
+        var blur = shape as! BlurAnnotation
+        #expect(blur.rect == CGRect(x: 10, y: 10, width: 40, height: 30))
+        #expect(blur.hitTest(CGPoint(x: 30, y: 25), tolerance: 2))                 // filled: inside counts
+        blur.resize(to: CGRect(x: 0, y: 0, width: 20, height: 20)); #expect(blur.rect.width == 20)
+        blur.translate(by: CGSize(width: 5, height: 5)); #expect(blur.rect.origin == CGPoint(x: 5, y: 5))
+        #expect(AnnotationTool.pixelate.isValid(points: [.zero, CGPoint(x: 30, y: 30)]))
+        #expect(!AnnotationTool.pixelate.isValid(points: [.zero, CGPoint(x: 30, y: 0)]))
+    }
+}
