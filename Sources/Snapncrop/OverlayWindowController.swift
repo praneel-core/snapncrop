@@ -31,10 +31,11 @@ final class OverlayWindowController {
     func makeKey() { window.makeKeyAndOrderFront(nil); window.makeFirstResponder(view) }
     func close() { window.orderOut(nil); window.contentView = nil; window.close() }
 
-    func enterEditing(selection: CGRect, cropped: CGImage) {
+    func enterEditing(selection: CGRect) {
         makeKey()
-        view.enterEditing(selection: selection, cropped: cropped)
+        view.enterEditing(selection: selection)
     }
+    func setSelection(_ r: CGRect) { view.setSelection(r) }
     func dimFully() { view.dimFully() }
 }
 
@@ -121,13 +122,17 @@ final class OverlayView: NSView {
 
     // MARK: editing
 
-    func enterEditing(selection s: CGRect, cropped: CGImage) {
+    func enterEditing(selection s: CGRect) {
         selection = s
-        let canvas = CanvasView(frame: s, image: cropped, session: session)
+        // The canvas covers the whole display (transparent outside the crop) so the crop's handles
+        // and annotations can be dragged anywhere, and annotations can live in display coordinates.
+        let canvas = CanvasView(frame: bounds, frozen: shot.image, session: session)
         addSubview(canvas)
         session.canvas = canvas
         needsDisplay = true
     }
+
+    func setSelection(_ r: CGRect) { selection = r; needsDisplay = true }
 
     func dimFully() { fullyDimmed = true; selection = nil; needsDisplay = true }
 

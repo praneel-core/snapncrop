@@ -459,3 +459,167 @@ private func fire(_ d: inout FourFingerTapDetector, _ t: [TouchPoint], _ ts: Dou
         #expect(AnnotationTool.select.isValid(points: [.zero, CGPoint(x: 50, y: 50)]) == false)
     }
 }
+
+// MARK: resize handles
+
+@Suite struct ResizeTests {
+    private let red = StrokeStyle(color: .red, width: 4)
+    private let frame = CGRect(x: 100, y: 100, width: 200, height: 100)
+
+    @Test func handlePositionsAndHitTesting() {
+        #expect(ResizeHandle.topLeft.position(in: frame) == CGPoint(x: 100, y: 100))
+        #expect(ResizeHandle.bottomRight.position(in: frame) == CGPoint(x: 300, y: 200))
+        #expect(ResizeHandle.top.position(in: frame) == CGPoint(x: 200, y: 100))
+        #expect(ResizeHandle.hit(CGPoint(x: 303, y: 198), in: frame) == .bottomRight)
+        #expect(ResizeHandle.hit(CGPoint(x: 200, y: 150), in: frame) == nil)        // middle of the box
+    }
+
+    @Test func draggingHandlesChangesTheRightEdges() {
+        #expect(ResizeHandle.right.apply(dragTo: CGPoint(x: 400, y: 999), frame: frame)
+                == CGRect(x: 100, y: 100, width: 300, height: 100))                 // edge handle: y ignored
+        #expect(ResizeHandle.topLeft.apply(dragTo: CGPoint(x: 50, y: 60), frame: frame)
+                == CGRect(x: 50, y: 60, width: 250, height: 140))
+        #expect(ResizeHandle.bottom.apply(dragTo: CGPoint(x: 0, y: 150), frame: frame)
+                == CGRect(x: 100, y: 100, width: 200, height: 50))
+    }
+
+    @Test func draggingPastTheOppositeSideFlipsInsteadOfBreaking() {
+        let r = ResizeHandle.right.apply(dragTo: CGPoint(x: 40, y: 0), frame: frame)
+        #expect(r == CGRect(x: 40, y: 100, width: 60, height: 100))
+        #expect(r.width >= 0)
+    }
+
+    @Test func keepAspectScalesAroundTheOppositeCorner() {
+        // Frame is 2:1. Dragging bottom-right to x=500 (width 400) must give 400x200, top-left fixed.
+        let r = ResizeHandle.bottomRight.apply(dragTo: CGPoint(x: 500, y: 210), frame: frame, keepAspect: true)
+        #expect(r == CGRect(x: 100, y: 100, width: 400, height: 200))
+        // Top-left handle: bottom-right corner stays put.
+        let t = ResizeHandle.topLeft.apply(dragTo: CGPoint(x: 0, y: 150), frame: frame, keepAspect: true)
+        #expect(t.maxX == 300 && t.maxY == 200)
+        #expect(abs(t.width / t.height - 2) < 0.0001)
+    }
+
+    @Test func shapesResizeToTheNewFrame() {
+        var rect = RectAnnotation(rect: frame, style: red)
+        rect.resize(to: CGRect(x: 0, y: 0, width: 50, height: 20)); #expect(rect.rect == CGRect(x: 0, y: 0, width: 50, height: 20))
+        var e = EllipseAnnotation(rect: frame, style: red)
+        e.resize(to: CGRect(x: 10, y: 10, width: 30, height: 30)); #expect(e.rect.width == 30)
+        var h = HighlightAnnotation(rect: frame, style: red)
+        h.resize(to: CGRect(x: 10, y: 10, width: 70, height: 5)); #expect(h.rect.height == 5)
+    }
+
+    @Test func penScalesWithItsFrame() {
+        var pen = PenAnnotation(points: [CGPoint(x: 0, y: 0), CGPoint(x: 10, y: 10), CGPoint(x: 20, y: 0)], style: red)
+        pen.resize(to: CGRect(x: 100, y: 100, width: 40, height: 20))    // 2x wider, 2x taller, moved
+        #expect(pen.points[0] == CGPoint(x: 100, y: 100))
+        #expect(pen.points[1] == CGPoint(x: 120, y: 120))       // middle point (10,10) of a 20x10 frame
+        #expect(pen.frame == CGRect(x: 100, y: 100, width: 40, height: 20))
+        // A perfectly flat stroke (zero height) must not divide by zero.
+        var flat = PenAnnotation(points: [CGPoint(x: 0, y: 5), CGPoint(x: 10, y: 5)], style: red)
+        flat.resize(to: CGRect(x: 0, y: 5, width: 20, height: 0))
+        #expect(flat.points.allSatisfy { $0.x.isFinite && $0.y.isFinite })
+        #expect(flat.points[1].x == 20)
+    }
+
+    @Test func lineAndArrowMoveEndpoints() {
+        var l = LineAnnotation(start: CGPoint(x: 0, y: 0), end: CGPoint(x: 10, y: 10), style: red)
+        #expect(l.endpoints == [CGPoint(x: 0, y: 0), CGPoint(x: 10, y: 10)])
+        l.moveEndpoint(1, to: CGPoint(x: 50, y: 5))
+        #expect(l.end == CGPoint(x: 50, y: 5) && l.start == .zero)
+        var a = ArrowAnnotation(start: .zero, end: CGPoint(x: 10, y: 10), style: red)
+        a.moveEndpoint(0, to: CGPoint(x: -5, y: -5))
+        #expect(a.start == CGPoint(x: -5, y: -5))
+        #expect(RectAnnotation(rect: frame, style: red).endpoints == nil)
+    }
+
+    @Test func textResizeScalesTheFont() {
+        var t = TextAnnotation(origin: CGPoint(x: 50, y: 50), text: "Hello", style: red)   // 24pt
+        let before = t.bounds
+        let target = ResizeHandle.bottomRight.apply(
+            dragTo: CGPoint(x: before.minX + before.width * 2, y: before.minY + before.height * 2),
+            frame: before, keepAspect: true)
+        t.resize(to: target)
+        #expect(abs(t.fontSize - 48) < 0.01, "font should double, got \(t.fontSize)")
+        #expect(t.origin == CGPoint(x: 50, y: 50))
+        #expect(abs(t.bounds.height - before.height * 2) < 1)
+        #expect(TextAnnotation(origin: .zero, text: "x", style: red).keepsAspectRatio)
+        var tiny = t; tiny.resize(to: CGRect(x: 0, y: 0, width: 1, height: 0.01))
+        #expect(tiny.fontSize >= 6)                                                       // clamped, never vanishes
+    }
+
+    @Test func annotationsInDisplayCoordinatesExportRelativeToTheCrop() {
+        // Display is 200x200pt at 2x. Crop starts at (50, 50) and is 100x100pt. The rectangle's top-left
+        // corner sits at display (60, 60) -> 10pt inside the crop -> pixel (20, 20) of the output.
+        let frozen = solidImage(width: 400, height: 400)
+        let r = RectAnnotation(rect: CGRect(x: 60, y: 60, width: 40, height: 30),
+                               style: StrokeStyle(color: RGBA(1, 0, 0), width: 4))
+        let out = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 100, y: 100, width: 200, height: 200),
+                                        selectionSize: CGSize(width: 100, height: 100), annotations: [r],
+                                        selectionOrigin: CGPoint(x: 50, y: 50))!
+        #expect(out.width == 200)
+        #expect(pixel(out, 60, 20).1 < 60, "top edge should be at crop-relative y = 10pt")
+        #expect(pixel(out, 60, 120).1 > 240)
+    }
+
+    @Test func growingTheCropRevealsAnnotationsWithoutMovingThem() {
+        // Same annotation, bigger crop to the top-left: it must still land on the same screen pixels.
+        let frozen = solidImage(width: 400, height: 400)
+        let r = RectAnnotation(rect: CGRect(x: 60, y: 60, width: 40, height: 30),
+                               style: StrokeStyle(color: RGBA(1, 0, 0), width: 4))
+        let big = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: 300, height: 300),
+                                        selectionSize: CGSize(width: 150, height: 150), annotations: [r],
+                                        selectionOrigin: .zero)!
+        // Top edge at display y=60pt -> pixel 120; sample at x = 80pt -> 160px
+        #expect(pixel(big, 160, 120).1 < 60)
+    }
+}
+
+
+// MARK: editing existing annotations
+
+@Suite struct EditExistingTests {
+    private let red = StrokeStyle(color: .red, width: 4)
+
+    @Test func editingTextKeepsIdentityPositionAndSize() {
+        var t = TextAnnotation(origin: CGPoint(x: 20, y: 30), text: "Old", style: red)
+        t.customFontSize = 40                                    // resized earlier by dragging
+        var edited = t; edited.text = "New and longer"
+        #expect(edited.id == t.id && edited.origin == t.origin && edited.fontSize == 40)
+        let list = AnnotationList.replacing(edited, in: [t])
+        #expect((list[0] as? TextAnnotation)?.text == "New and longer")
+        #expect(edited.bounds.width > t.bounds.width)
+    }
+
+    @Test func widthChoiceOnTextResetsDraggedSizeToTheSMLFontSize() {
+        var t = TextAnnotation(origin: .zero, text: "Hi", style: red)
+        t.customFontSize = 99
+        t.applyWidth(8)                                          // "L"
+        #expect(t.customFontSize == nil && t.fontSize == 36)
+        var r: any Annotation = RectAnnotation(rect: CGRect(x: 0, y: 0, width: 10, height: 10), style: red)
+        r.applyWidth(8)
+        #expect(r.style.width == 8)
+    }
+
+    @Test func restylingASelectedAnnotationThroughTheExistential() {
+        let original: any Annotation = LineAnnotation(start: .zero, end: CGPoint(x: 10, y: 0), style: red)
+        var changed = original
+        changed.style.color = .blue
+        changed.applyWidth(2)
+        #expect(changed.style == StrokeStyle(color: .blue, width: 2))
+        #expect(original.style == red)                           // original untouched until committed
+        var h = History<[any Annotation]>(initial: [original])
+        h.commit(AnnotationList.replacing(changed, in: h.current))
+        #expect(h.current[0].style.color == .blue)
+        h.undo()
+        #expect(h.current[0].style == red)                       // restyle is one undo step
+    }
+
+    @Test func deletingEmptiedTextIsUndoable() {
+        let t = TextAnnotation(origin: .zero, text: "Gone", style: red)
+        var h = History<[any Annotation]>(initial: [t])
+        h.commit(AnnotationList.removing(id: t.id, from: h.current))
+        #expect(h.current.isEmpty)
+        h.undo()
+        #expect((h.current[0] as? TextAnnotation)?.text == "Gone")
+    }
+}

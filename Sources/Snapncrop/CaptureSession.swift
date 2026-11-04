@@ -24,7 +24,6 @@ final class CaptureSession {
     private(set) var activeShot: DisplayShot?
     private(set) var selection: CGRect?          // display points, top-left origin
     private(set) var pixelCrop: CGRect?
-    private(set) var croppedImage: CGImage?
 
     // Annotations
     private(set) var history = History<[any Annotation]>(initial: [])
@@ -42,7 +41,21 @@ final class CaptureSession {
 
     // Selection (Select tool): which annotation is highlighted for moving / deleting.
     private(set) var selectedID: UUID?
-    func select(_ id: UUID?) { selectedID = id; canvas?.needsDisplay = true }
+    func select(_ id: UUID?) {
+        selectedID = id
+        if let a = selectedAnnotation { style = a.style; toolbar?.syncStyle() }   // toolbar shows the selected item's settings
+        canvas?.needsDisplay = true
+    }
+
+    /// Toolbar colour / width choices: always become the drawing style, and also restyle the selected annotation.
+    func setColor(_ c: RGBA) {
+        style.color = c
+        if tool == .select, var a = selectedAnnotation { a.style.color = c; replace(a) }
+    }
+    func setWidth(_ w: CGFloat) {
+        style.width = w
+        if tool == .select, var a = selectedAnnotation { a.applyWidth(w); replace(a) }
+    }
     var selectedAnnotation: (any Annotation)? { annotations.first { $0.id == selectedID } }
 
     /// Commit a moved/edited annotation (undoable as one step).
@@ -52,10 +65,11 @@ final class CaptureSession {
         refreshToolbar()
     }
 
-    func deleteSelected() {
-        guard let id = selectedID else { return }
+    func deleteSelected() { if let id = selectedID { delete(id) } }
+
+    func delete(_ id: UUID) {
         history.commit(AnnotationList.removing(id: id, from: annotations))
-        selectedID = nil
+        if selectedID == id { selectedID = nil }
         canvas?.needsDisplay = true
         refreshToolbar()
     }
@@ -114,22 +128,43 @@ final class CaptureSession {
         let snapped = Geometry.snapToPixelGrid(rect, scale: shot.scale)
         let px = Geometry.pixelRect(forPointRect: snapped, displayPointSize: shot.pointSize,
                                     imagePixelSize: CGSize(width: shot.image.width, height: shot.image.height))
-        guard px.width >= 1, px.height >= 1, let cropped = shot.image.cropping(to: px) else { return }
+        guard px.width >= 1, px.height >= 1 else { return }
 
-        activeShot = shot; selection = snapped; pixelCrop = px; croppedImage = cropped
+        activeShot = shot; selection = snapped; pixelCrop = px
         state = .editing
 
         for c in controllers {
-            if c.shot.displayID == shot.displayID { c.enterEditing(selection: snapped, cropped: cropped) }
+            if c.shot.displayID == shot.displayID { c.enterEditing(selection: snapped) }
             else { c.dimFully() }
         }
         let bar = ToolbarPanel(session: self)
         toolbar = bar
-        let h = shot.frame.height
-        let sel = Geometry.flipY(snapped, containerHeight: h).offsetBy(dx: shot.frame.minX, dy: shot.frame.minY)
-        bar.setFrameOrigin(ToolbarPlacement.origin(selection: sel, toolbarSize: bar.frame.size, screenFrame: shot.frame))
+        positionToolbar()
         bar.orderFrontRegardless()
         refreshToolbar()
+    }
+
+    /// Keep the toolbar next to the selection (called again whenever the crop is resized).
+    private func positionToolbar() {
+        guard let bar = toolbar, let shot = activeShot, let snapped = selection else { return }
+        let sel = Geometry.flipY(snapped, containerHeight: shot.frame.height).offsetBy(dx: shot.frame.minX, dy: shot.frame.minY)
+        bar.setFrameOrigin(ToolbarPlacement.origin(selection: sel, toolbarSize: bar.frame.size, screenFrame: shot.frame))
+    }
+
+    /// Change the crop after the first drag (the user dragged one of its handles).
+    /// Annotations are stored in display coordinates, so they stay exactly where they are.
+    func resizeSelection(to rect: CGRect) {
+        guard state == .editing, let shot = activeShot else { return }
+        let clamped = Geometry.clamp(rect, to: CGRect(origin: .zero, size: shot.pointSize))
+        guard clamped.width >= 8, clamped.height >= 8 else { return }       // keep a usable minimum
+        let snapped = Geometry.snapToPixelGrid(clamped, scale: shot.scale)
+        let px = Geometry.pixelRect(forPointRect: snapped, displayPointSize: shot.pointSize,
+                                    imagePixelSize: CGSize(width: shot.image.width, height: shot.image.height))
+        guard px.width >= 1, px.height >= 1 else { return }
+        selection = snapped; pixelCrop = px
+        for c in controllers where c.shot.displayID == shot.displayID { c.setSelection(snapped) }
+        canvas?.selectionChanged()
+        positionToolbar()
     }
 
     // MARK: annotations
@@ -148,7 +183,8 @@ final class CaptureSession {
     private func renderPNG() -> Data? {
         guard state == .editing, let shot = activeShot, let sel = selection, let crop = pixelCrop,
               let img = ExportRenderer.render(frozen: shot.image, pixelCrop: crop,
-                                              selectionSize: sel.size, annotations: annotations)
+                                              selectionSize: sel.size, annotations: annotations,
+                                              selectionOrigin: sel.origin)
         else { return nil }
         return ExportRenderer.pngData(from: img, scale: shot.scale)
     }

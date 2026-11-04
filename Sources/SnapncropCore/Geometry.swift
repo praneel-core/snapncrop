@@ -69,3 +69,64 @@ public enum ToolbarPlacement {
         return CGPoint(x: x, y: selection.minY + margin)   // selection fills the screen: sit inside it
     }
 }
+
+
+/// The eight grab points around a rectangle, used for both the crop and for annotations.
+public enum ResizeHandle: CaseIterable {
+    case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
+
+    // Coordinates are top-left based (y grows downward), like everything in view space.
+    public func position(in f: CGRect) -> CGPoint {
+        switch self {
+        case .topLeft:     return CGPoint(x: f.minX, y: f.minY)
+        case .top:         return CGPoint(x: f.midX, y: f.minY)
+        case .topRight:    return CGPoint(x: f.maxX, y: f.minY)
+        case .right:       return CGPoint(x: f.maxX, y: f.midY)
+        case .bottomRight: return CGPoint(x: f.maxX, y: f.maxY)
+        case .bottom:      return CGPoint(x: f.midX, y: f.maxY)
+        case .bottomLeft:  return CGPoint(x: f.minX, y: f.maxY)
+        case .left:        return CGPoint(x: f.minX, y: f.midY)
+        }
+    }
+
+    /// The handle under `point`, if any. Corners win over edges when handles overlap on tiny rects.
+    public static func hit(_ point: CGPoint, in f: CGRect, radius: CGFloat = 7) -> ResizeHandle? {
+        let order: [ResizeHandle] = [.topLeft, .topRight, .bottomRight, .bottomLeft, .top, .right, .bottom, .left]
+        return order.first { hypot($0.position(in: f).x - point.x, $0.position(in: f).y - point.y) <= radius }
+    }
+
+    private var movesLeft: Bool { self == .topLeft || self == .left || self == .bottomLeft }
+    private var movesRight: Bool { self == .topRight || self == .right || self == .bottomRight }
+    private var movesTop: Bool { self == .topLeft || self == .top || self == .topRight }
+    private var movesBottom: Bool { self == .bottomLeft || self == .bottom || self == .bottomRight }
+
+    /// New frame when this handle of `f` is dragged to `p`. Dragging past the opposite side flips the
+    /// rectangle instead of breaking it. With `keepAspect` the original proportions are kept and the
+    /// side opposite the handle stays fixed (used for text, where resizing means scaling).
+    public func apply(dragTo p: CGPoint, frame f: CGRect, keepAspect: Bool = false) -> CGRect {
+        var minX = f.minX, maxX = f.maxX, minY = f.minY, maxY = f.maxY
+        if movesLeft { minX = p.x }
+        if movesRight { maxX = p.x }
+        if movesTop { minY = p.y }
+        if movesBottom { maxY = p.y }
+        let raw = CGRect(x: min(minX, maxX), y: min(minY, maxY), width: abs(maxX - minX), height: abs(maxY - minY))
+        guard keepAspect, f.width > 0, f.height > 0 else { return raw }
+
+        let sx = raw.width / f.width, sy = raw.height / f.height
+        let scale = abs(sx - 1) > abs(sy - 1) ? sx : sy
+        let size = CGSize(width: f.width * scale, height: f.height * scale)
+        let anchor = CGPoint(x: movesLeft ? f.maxX : (movesRight ? f.minX : f.midX),
+                             y: movesTop ? f.maxY : (movesBottom ? f.minY : f.midY))
+        let fx = (anchor.x - f.minX) / f.width, fy = (anchor.y - f.minY) / f.height
+        return CGRect(x: anchor.x - fx * size.width, y: anchor.y - fy * size.height, width: size.width, height: size.height)
+    }
+}
+
+extension Geometry {
+    /// Map a point from one frame to another (used when resizing pens). Zero-size axes just translate.
+    public static func remap(_ p: CGPoint, from old: CGRect, to new: CGRect) -> CGPoint {
+        let x = old.width > 0 ? new.minX + (p.x - old.minX) / old.width * new.width : p.x - old.minX + new.minX
+        let y = old.height > 0 ? new.minY + (p.y - old.minY) / old.height * new.height : p.y - old.minY + new.minY
+        return CGPoint(x: x, y: y)
+    }
+}

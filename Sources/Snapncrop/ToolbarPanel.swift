@@ -193,6 +193,13 @@ final class ToolbarPanel: NSPanel {
         undoButton.isEnabled = canUndo; redoButton.isEnabled = canRedo
     }
 
+    /// Show the current drawing style (called when an annotation is selected).
+    func syncStyle() {
+        let st = session.style
+        swatches.enumerated().forEach { $0.element.isChosen = (palette[$0.offset] == st.color) }
+        widthControl.selectedSegment = widths.firstIndex(of: st.width) ?? -1
+    }
+
     func refreshTool(_ t: AnnotationTool) {
         for (tool, b) in toolButtons { b.state = (tool == t) ? .on : .off }
     }
@@ -201,10 +208,10 @@ final class ToolbarPanel: NSPanel {
         refreshTool(session.tool)    // keep the clicked button lit even if clicked twice
     }
     @objc private func pickColor(_ s: SwatchButton) {
-        session.style.color = palette[s.tag]
+        session.setColor(palette[s.tag])
         swatches.forEach { $0.isChosen = ($0 === s) }
     }
-    @objc private func pickWidth(_ c: NSSegmentedControl) { session.style.width = widths[c.selectedSegment] }
+    @objc private func pickWidth(_ c: NSSegmentedControl) { session.setWidth(widths[c.selectedSegment]) }
     @objc private func doUndo() { session.undo() }
     @objc private func doRedo() { session.redo() }
     @objc private func doCopy() { session.copyAndClose() }

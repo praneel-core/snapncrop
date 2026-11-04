@@ -21,10 +21,13 @@ public enum ExportRenderer {
     /// - Parameters:
     ///   - pixelCrop: crop rectangle in image pixels (top-left origin).
     ///   - selectionSize: the same region's size in points; used to scale annotations to pixels.
+    ///   - selectionOrigin: top-left of the region in display points. Annotations live in display
+    ///     coordinates, so they are shifted by this to land inside the cropped picture.
     public static func render(frozen: CGImage,
                               pixelCrop: CGRect,
                               selectionSize: CGSize,
-                              annotations: [any Annotation]) -> CGImage? {
+                              annotations: [any Annotation],
+                              selectionOrigin: CGPoint = .zero) -> CGImage? {
         guard let cropped = frozen.cropping(to: pixelCrop) else { return nil }
         let w = cropped.width, h = cropped.height
         guard w > 0, h > 0 else { return nil }
@@ -41,6 +44,7 @@ public enum ExportRenderer {
         // Switch to top-left, point-based coordinates (same as the on-screen canvas).
         ctx.translateBy(x: 0, y: CGFloat(h))
         ctx.scaleBy(x: CGFloat(w) / selectionSize.width, y: -CGFloat(h) / selectionSize.height)
+        ctx.translateBy(x: -selectionOrigin.x, y: -selectionOrigin.y)
         ctx.setAllowsAntialiasing(true)
         ctx.setShouldAntialias(true)
         for a in annotations { a.draw(in: ctx) }

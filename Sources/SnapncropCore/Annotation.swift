@@ -36,6 +36,27 @@ public protocol Annotation {
     var bounds: CGRect { get }
     func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool
     mutating func translate(by delta: CGSize)
+
+    // Resizing. Defaults (below) mean "not resizable"; each type overrides what applies to it.
+    /// The geometry the resize handles sit on (no stroke padding).
+    var frame: CGRect { get }
+    /// True when resizing should keep the proportions (text scales rather than stretches).
+    var keepsAspectRatio: Bool { get }
+    /// Lines and arrows resize by dragging their two end points instead of a box.
+    var endpoints: [CGPoint]? { get }
+    mutating func resize(to newFrame: CGRect)
+    mutating func moveEndpoint(_ index: Int, to point: CGPoint)
+    /// Change the S/M/L width. For text this means the font size.
+    mutating func applyWidth(_ width: CGFloat)
+}
+
+public extension Annotation {
+    var frame: CGRect { bounds }
+    var keepsAspectRatio: Bool { false }
+    var endpoints: [CGPoint]? { nil }
+    mutating func resize(to newFrame: CGRect) {}
+    mutating func moveEndpoint(_ index: Int, to point: CGPoint) {}
+    mutating func applyWidth(_ width: CGFloat) { style.width = width }
 }
 
 // MARK: - Phase 1: rectangle
@@ -65,6 +86,9 @@ public struct RectAnnotation: Annotation {
         let t = tolerance + style.width / 2
         return rect.insetBy(dx: -t, dy: -t).contains(point) && !rect.insetBy(dx: t, dy: t).contains(point)
     }
+
+    public var frame: CGRect { rect }
+    public mutating func resize(to f: CGRect) { rect = f }
 
     public mutating func translate(by delta: CGSize) {
         rect = rect.offsetBy(dx: delta.width, dy: delta.height)
@@ -100,6 +124,9 @@ public struct EllipseAnnotation: Annotation {
         let distanceFromCurve = abs(sqrt(nx * nx + ny * ny) - 1) * min(a, b)
         return distanceFromCurve <= tolerance + style.width / 2
     }
+
+    public var frame: CGRect { rect }
+    public mutating func resize(to f: CGRect) { rect = f }
 
     public mutating func translate(by delta: CGSize) {
         rect = rect.offsetBy(dx: delta.width, dy: delta.height)
@@ -141,6 +168,10 @@ public struct LineAnnotation: Annotation {
     public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
         distance(from: point, toSegment: start, end) <= tolerance + style.width / 2
     }
+
+    public var frame: CGRect { Geometry.normalizedRect(from: start, to: end) }
+    public var endpoints: [CGPoint]? { [start, end] }
+    public mutating func moveEndpoint(_ i: Int, to p: CGPoint) { if i == 0 { start = p } else { end = p } }
 
     public mutating func translate(by d: CGSize) {
         start = CGPoint(x: start.x + d.width, y: start.y + d.height)
@@ -191,6 +222,10 @@ public struct ArrowAnnotation: Annotation {
     public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
         distance(from: point, toSegment: start, end) <= tolerance + max(style.width, 8) / 2
     }
+
+    public var frame: CGRect { Geometry.normalizedRect(from: start, to: end) }
+    public var endpoints: [CGPoint]? { [start, end] }
+    public mutating func moveEndpoint(_ i: Int, to p: CGPoint) { if i == 0 { start = p } else { end = p } }
 
     public mutating func translate(by d: CGSize) {
         start = CGPoint(x: start.x + d.width, y: start.y + d.height)
@@ -247,6 +282,17 @@ public struct PenAnnotation: Annotation {
         return zip(points, points.dropFirst()).contains { distance(from: point, toSegment: $0, $1) <= t }
     }
 
+    public var frame: CGRect {
+        guard let f = points.first else { return .zero }
+        var minX = f.x, maxX = f.x, minY = f.y, maxY = f.y
+        for p in points { minX = min(minX, p.x); maxX = max(maxX, p.x); minY = min(minY, p.y); maxY = max(maxY, p.y) }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+    public mutating func resize(to newFrame: CGRect) {
+        let old = frame
+        points = points.map { Geometry.remap($0, from: old, to: newFrame) }
+    }
+
     public mutating func translate(by d: CGSize) {
         points = points.map { CGPoint(x: $0.x + d.width, y: $0.y + d.height) }
     }
@@ -280,6 +326,9 @@ public struct HighlightAnnotation: Annotation {
         rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
     }
 
+    public var frame: CGRect { rect }
+    public mutating func resize(to f: CGRect) { rect = f }
+
     public mutating func translate(by d: CGSize) {
         rect = rect.offsetBy(dx: d.width, dy: d.height)
     }
@@ -299,7 +348,9 @@ public struct TextAnnotation: Annotation {
         self.id = id; self.origin = origin; self.text = text; self.style = style
     }
 
-    public var fontSize: CGFloat { 12 + style.width * 3 }
+    /// Set when the user resizes the text box; otherwise the size follows the S/M/L width setting.
+    public var customFontSize: CGFloat?
+    public var fontSize: CGFloat { customFontSize ?? 12 + style.width * 3 }
 
     /// Shared with the on-screen editor so what you type looks the same as what gets exported.
     public static func font(size: CGFloat) -> CTFont {
@@ -344,6 +395,16 @@ public struct TextAnnotation: Annotation {
 
     public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
         bounds.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+    }
+
+    public var keepsAspectRatio: Bool { true }
+    /// A new S/M/L choice overrides any size set by dragging handles.
+    public mutating func applyWidth(_ width: CGFloat) { style.width = width; customFontSize = nil }
+    /// Resizing text scales its font size so the box matches the new frame.
+    public mutating func resize(to f: CGRect) {
+        let old = bounds
+        if old.height > 0 { customFontSize = min(400, max(6, fontSize * f.height / old.height)) }
+        origin = f.origin
     }
 
     public mutating func translate(by d: CGSize) {
