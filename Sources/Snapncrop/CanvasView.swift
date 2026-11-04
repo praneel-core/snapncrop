@@ -8,7 +8,7 @@ final class CanvasView: NSView {
     private let image: CGImage
     private unowned let session: CaptureSession
     private var dragStart: CGPoint?
-    private var dragEnd: CGRect?          // bounding box of the current drag
+    private var dragEnd: CGPoint?
     private var preview: (any Annotation)?
 
     init(frame: CGRect, image: CGImage, session: CaptureSession) {
@@ -37,14 +37,15 @@ final class CanvasView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let start = dragStart else { return }
         let p = convert(event.locationInWindow, from: nil)
-        dragEnd = Geometry.normalizedRect(from: start, to: p)
-        preview = session.tool.makeShape(rect: Geometry.normalizedRect(from: start, to: p), style: session.style)
+        dragEnd = p
+        preview = session.tool.makeShape(from: start, to: p, style: session.style)
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
         defer { dragStart = nil; dragEnd = nil; preview = nil; needsDisplay = true }
-        guard let shape = preview, let end = dragEnd, end.width >= 2, end.height >= 2 else { return }
+        guard let shape = preview, let a = dragStart, let b = dragEnd,
+              session.tool.isValidDrag(from: a, to: b) else { return }
         session.commit(shape)
     }
 }

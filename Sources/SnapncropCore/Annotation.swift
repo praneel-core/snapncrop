@@ -99,22 +99,121 @@ public struct EllipseAnnotation: Annotation {
     }
 }
 
+// MARK: - Line
+
+/// Distance from `p` to the segment a-b. Shared by line and arrow hit-testing.
+public func distance(from p: CGPoint, toSegment a: CGPoint, _ b: CGPoint) -> CGFloat {
+    let dx = b.x - a.x, dy = b.y - a.y
+    let lenSq = dx * dx + dy * dy
+    guard lenSq > 0 else { return hypot(p.x - a.x, p.y - a.y) }
+    let t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq))
+    return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+}
+
+public struct LineAnnotation: Annotation {
+    public let id: UUID
+    public var style: StrokeStyle
+    public var start: CGPoint
+    public var end: CGPoint
+
+    public init(id: UUID = UUID(), start: CGPoint, end: CGPoint, style: StrokeStyle) {
+        self.id = id; self.start = start; self.end = end; self.style = style
+    }
+
+    public func draw(in ctx: CGContext) {
+        ctx.saveGState()
+        ctx.setStrokeColor(style.color.cgColor)
+        ctx.setLineWidth(style.width)
+        ctx.setLineCap(.round)
+        ctx.move(to: start); ctx.addLine(to: end); ctx.strokePath()
+        ctx.restoreGState()
+    }
+
+    public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
+        distance(from: point, toSegment: start, end) <= tolerance + style.width / 2
+    }
+
+    public mutating func translate(by d: CGSize) {
+        start = CGPoint(x: start.x + d.width, y: start.y + d.height)
+        end = CGPoint(x: end.x + d.width, y: end.y + d.height)
+    }
+}
+
+// MARK: - Arrow
+
+/// A line with a filled triangular head at `end`. The head scales with the stroke width.
+public struct ArrowAnnotation: Annotation {
+    public let id: UUID
+    public var style: StrokeStyle
+    public var start: CGPoint
+    public var end: CGPoint
+
+    public init(id: UUID = UUID(), start: CGPoint, end: CGPoint, style: StrokeStyle) {
+        self.id = id; self.start = start; self.end = end; self.style = style
+    }
+
+    /// Head length in points; never longer than the arrow itself.
+    var headLength: CGFloat {
+        min(max(12, style.width * 4), hypot(end.x - start.x, end.y - start.y))
+    }
+
+    public func draw(in ctx: CGContext) {
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let head = headLength
+        let spread: CGFloat = .pi / 7          // ~26 degrees each side
+        let left = CGPoint(x: end.x - head * cos(angle - spread), y: end.y - head * sin(angle - spread))
+        let right = CGPoint(x: end.x - head * cos(angle + spread), y: end.y - head * sin(angle + spread))
+        // Stop the shaft inside the head so a thick line doesn't poke out past the tip.
+        let shaftEnd = CGPoint(x: end.x - head * 0.6 * cos(angle), y: end.y - head * 0.6 * sin(angle))
+
+        ctx.saveGState()
+        ctx.setStrokeColor(style.color.cgColor)
+        ctx.setFillColor(style.color.cgColor)
+        ctx.setLineWidth(style.width)
+        ctx.setLineCap(.round)
+        ctx.move(to: start); ctx.addLine(to: shaftEnd); ctx.strokePath()
+        ctx.move(to: end); ctx.addLine(to: left); ctx.addLine(to: right); ctx.closePath()
+        ctx.fillPath()
+        ctx.restoreGState()
+    }
+
+    public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
+        distance(from: point, toSegment: start, end) <= tolerance + max(style.width, 8) / 2
+    }
+
+    public mutating func translate(by d: CGSize) {
+        start = CGPoint(x: start.x + d.width, y: start.y + d.height)
+        end = CGPoint(x: end.x + d.width, y: end.y + d.height)
+    }
+}
+
 // MARK: - Phase 2 / 3 stubs (not built yet; each is one small struct like RectAnnotation)
-// TODO(Phase 2): LineAnnotation, ArrowAnnotation, PenAnnotation (points array),
-//                HighlightAnnotation (translucent filled rect), TextAnnotation.
+// TODO(Phase 2): PenAnnotation (points array), HighlightAnnotation (translucent filled rect), TextAnnotation.
 // TODO(Phase 3): BlurAnnotation (pixelate the underlying crop), StepMarkerAnnotation (numbered circles).
 
 /// Tools shown in the toolbar. Add a case here, then a branch in `makeShape`, and the toolbar/keys follow.
 public enum AnnotationTool: CaseIterable {
     case rectangle
     case ellipse
-    // TODO(Phase 2): line, arrow, pen, highlighter, text
+    case line
+    case arrow
+    // TODO(Phase 2): pen, highlighter, text
 
-    /// Builds the shape for a drag-to-draw tool from the bounding box of the drag.
-    public func makeShape(rect: CGRect, style: StrokeStyle) -> any Annotation {
+    /// Builds the shape for a drag-to-draw tool from the two drag points.
+    public func makeShape(from a: CGPoint, to b: CGPoint, style: StrokeStyle) -> any Annotation {
         switch self {
-        case .rectangle: return RectAnnotation(rect: rect, style: style)
-        case .ellipse:   return EllipseAnnotation(rect: rect, style: style)
+        case .rectangle: return RectAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style)
+        case .ellipse:   return EllipseAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style)
+        case .line:      return LineAnnotation(start: a, end: b, style: style)
+        case .arrow:     return ArrowAnnotation(start: a, end: b, style: style)
+        }
+    }
+
+    /// Ignore accidental clicks: boxes need some width AND height, lines need some length.
+    public func isValidDrag(from a: CGPoint, to b: CGPoint) -> Bool {
+        switch self {
+        case .rectangle, .ellipse: return abs(a.x - b.x) >= 2 && abs(a.y - b.y) >= 2
+        case .line, .arrow:        return hypot(a.x - b.x, a.y - b.y) >= 3
         }
     }
 }

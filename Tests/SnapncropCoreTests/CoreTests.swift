@@ -157,11 +157,53 @@ private func pixel(_ image: CGImage, _ x: Int, _ y: Int) -> (Int, Int, Int) {
         #expect(centre.1 > 240)              // not filled
     }
 
+    @Test func lineIsBurnedIntoCorrectPixels() {
+        let frozen = solidImage(width: 200, height: 200)
+        let l = LineAnnotation(start: CGPoint(x: 10, y: 50), end: CGPoint(x: 90, y: 50),
+                               style: StrokeStyle(color: RGBA(1, 0, 0), width: 4))
+        let out = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: 200, height: 200),
+                                        selectionSize: CGSize(width: 100, height: 100), annotations: [l])!
+        let on = pixel(out, 100, 100)        // middle of a horizontal line at y = 50pt
+        #expect(on.0 > 200 && on.1 < 60 && on.2 < 60, "expected red on the line, got \(on)")
+        let off = pixel(out, 100, 120)       // 10px below, thicker than the 8px stroke allows
+        #expect(off.1 > 240)
+    }
+
+    @Test func arrowHeadIsFilledAtTheTip() {
+        let frozen = solidImage(width: 200, height: 200)
+        let a = ArrowAnnotation(start: CGPoint(x: 10, y: 50), end: CGPoint(x: 90, y: 50),
+                                style: StrokeStyle(color: RGBA(1, 0, 0), width: 4))
+        let out = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: 200, height: 200),
+                                        selectionSize: CGSize(width: 100, height: 100), annotations: [a])!
+        // Head is 16pt long (width*4), about 5.8pt either side of the axis 12pt behind the tip.
+        // A plain 4pt-wide line (2pt either side) would be white 4pt off the axis, so red here means head.
+        let inHead = pixel(out, 156, 92)         // x=78pt, 4pt above the axis
+        #expect(inHead.0 > 200 && inHead.1 < 60, "expected the arrowhead here, got \(inHead)")
+        let shaft = pixel(out, 60, 100)
+        #expect(shaft.0 > 200 && shaft.1 < 60)
+        let beyondTip = pixel(out, 190, 100)     // past the tip
+        #expect(beyondTip.1 > 240)
+    }
+
+    @Test func lineAndArrowHitTestAndTools() {
+        let l = LineAnnotation(start: .zero, end: CGPoint(x: 100, y: 0), style: .default)
+        #expect(l.hitTest(CGPoint(x: 50, y: 4), tolerance: 3))
+        #expect(!l.hitTest(CGPoint(x: 50, y: 20), tolerance: 3))
+        #expect(!l.hitTest(CGPoint(x: 150, y: 0), tolerance: 3))     // beyond the end
+        var a = ArrowAnnotation(start: .zero, end: CGPoint(x: 100, y: 0), style: .default)
+        a.translate(by: CGSize(width: 10, height: 5))
+        #expect(a.start == CGPoint(x: 10, y: 5) && a.end == CGPoint(x: 110, y: 5))
+        #expect(AnnotationTool.arrow.makeShape(from: .zero, to: CGPoint(x: 9, y: 9), style: .default) is ArrowAnnotation)
+        #expect(!AnnotationTool.line.isValidDrag(from: .zero, to: CGPoint(x: 1, y: 1)))     // just a click
+        #expect(AnnotationTool.line.isValidDrag(from: .zero, to: CGPoint(x: 50, y: 0)))     // flat line is fine
+        #expect(!AnnotationTool.rectangle.isValidDrag(from: .zero, to: CGPoint(x: 50, y: 0)))
+    }
+
     @Test func ellipseHitTestAndTool() {
         let e = EllipseAnnotation(rect: CGRect(x: 0, y: 0, width: 100, height: 60), style: .default)
         #expect(e.hitTest(CGPoint(x: 50, y: 0), tolerance: 3))
         #expect(!e.hitTest(CGPoint(x: 50, y: 30), tolerance: 3))
-        #expect(AnnotationTool.ellipse.makeShape(rect: .init(x: 0, y: 0, width: 5, height: 5), style: .default) is EllipseAnnotation)
+        #expect(AnnotationTool.ellipse.makeShape(from: .zero, to: CGPoint(x: 5, y: 5), style: .default) is EllipseAnnotation)
     }
 
     @Test func pngRoundTrip() throws {
