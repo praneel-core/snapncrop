@@ -187,8 +187,85 @@ public struct ArrowAnnotation: Annotation {
     }
 }
 
+// MARK: - Pen (freehand)
+
+public struct PenAnnotation: Annotation {
+    public let id: UUID
+    public var style: StrokeStyle
+    public var points: [CGPoint]
+
+    public init(id: UUID = UUID(), points: [CGPoint], style: StrokeStyle) {
+        self.id = id; self.points = points; self.style = style
+    }
+
+    public func draw(in ctx: CGContext) {
+        guard let first = points.first else { return }
+        ctx.saveGState()
+        ctx.setStrokeColor(style.color.cgColor)
+        ctx.setFillColor(style.color.cgColor)
+        ctx.setLineWidth(style.width)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        if points.count == 1 {                       // a click: draw a dot
+            let r = style.width / 2
+            ctx.fillEllipse(in: CGRect(x: first.x - r, y: first.y - r, width: style.width, height: style.width))
+        } else {
+            // Smooth the hand-drawn wobble: curve through the midpoints, using each point as a control point.
+            ctx.move(to: first)
+            for i in 1..<points.count - 1 {
+                let mid = CGPoint(x: (points[i].x + points[i + 1].x) / 2, y: (points[i].y + points[i + 1].y) / 2)
+                ctx.addQuadCurve(to: mid, control: points[i])
+            }
+            ctx.addLine(to: points[points.count - 1])
+            ctx.strokePath()
+        }
+        ctx.restoreGState()
+    }
+
+    public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
+        let t = tolerance + style.width / 2
+        if points.count == 1 { return hypot(point.x - points[0].x, point.y - points[0].y) <= t }
+        return zip(points, points.dropFirst()).contains { distance(from: point, toSegment: $0, $1) <= t }
+    }
+
+    public mutating func translate(by d: CGSize) {
+        points = points.map { CGPoint(x: $0.x + d.width, y: $0.y + d.height) }
+    }
+}
+
+// MARK: - Highlighter
+
+/// A translucent filled box, like a marker pen over text. Uses the chosen colour at 35% opacity;
+/// the stroke width setting does not apply.
+public struct HighlightAnnotation: Annotation {
+    public static let opacity: Double = 0.35
+    public let id: UUID
+    public var style: StrokeStyle
+    public var rect: CGRect
+
+    public init(id: UUID = UUID(), rect: CGRect, style: StrokeStyle) {
+        self.id = id; self.rect = rect; self.style = style
+    }
+
+    public func draw(in ctx: CGContext) {
+        ctx.saveGState()
+        ctx.setFillColor(style.color.cgColor.copy(alpha: Self.opacity) ?? style.color.cgColor)
+        ctx.fill(rect)
+        ctx.restoreGState()
+    }
+
+    /// Filled shape: anywhere inside counts.
+    public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
+        rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+    }
+
+    public mutating func translate(by d: CGSize) {
+        rect = rect.offsetBy(dx: d.width, dy: d.height)
+    }
+}
+
 // MARK: - Phase 2 / 3 stubs (not built yet; each is one small struct like RectAnnotation)
-// TODO(Phase 2): PenAnnotation (points array), HighlightAnnotation (translucent filled rect), TextAnnotation.
+// TODO(Phase 2): TextAnnotation (inline editor).
 // TODO(Phase 3): BlurAnnotation (pixelate the underlying crop), StepMarkerAnnotation (numbered circles).
 
 /// Tools shown in the toolbar. Add a case here, then a branch in `makeShape`, and the toolbar/keys follow.
@@ -197,23 +274,36 @@ public enum AnnotationTool: CaseIterable {
     case ellipse
     case line
     case arrow
-    // TODO(Phase 2): pen, highlighter, text
+    case pen
+    case highlighter
+    // TODO(Phase 2): text
 
-    /// Builds the shape for a drag-to-draw tool from the two drag points.
-    public func makeShape(from a: CGPoint, to b: CGPoint, style: StrokeStyle) -> any Annotation {
+    /// Builds the shape from the mouse path of a drag (first point = mouse down, last = current position).
+    public func makeShape(points: [CGPoint], style: StrokeStyle) -> any Annotation {
+        let a = points.first ?? .zero, b = points.last ?? .zero
         switch self {
-        case .rectangle: return RectAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style)
-        case .ellipse:   return EllipseAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style)
-        case .line:      return LineAnnotation(start: a, end: b, style: style)
-        case .arrow:     return ArrowAnnotation(start: a, end: b, style: style)
+        case .rectangle:   return RectAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style)
+        case .ellipse:     return EllipseAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style)
+        case .line:        return LineAnnotation(start: a, end: b, style: style)
+        case .arrow:       return ArrowAnnotation(start: a, end: b, style: style)
+        case .pen:         return PenAnnotation(points: points, style: style)
+        case .highlighter: return HighlightAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style)
         }
+    }
+
+    public func makeShape(from a: CGPoint, to b: CGPoint, style: StrokeStyle) -> any Annotation {
+        makeShape(points: [a, b], style: style)
     }
 
     /// Ignore accidental clicks: boxes need some width AND height, lines need some length.
-    public func isValidDrag(from a: CGPoint, to b: CGPoint) -> Bool {
+    public func isValid(points: [CGPoint]) -> Bool {
+        guard let a = points.first, let b = points.last else { return false }
         switch self {
-        case .rectangle, .ellipse: return abs(a.x - b.x) >= 2 && abs(a.y - b.y) >= 2
-        case .line, .arrow:        return hypot(a.x - b.x, a.y - b.y) >= 3
+        case .rectangle, .ellipse, .highlighter: return abs(a.x - b.x) >= 2 && abs(a.y - b.y) >= 2
+        case .line, .arrow:                      return hypot(a.x - b.x, a.y - b.y) >= 3
+        case .pen:                               return true      // even a click leaves a dot
         }
     }
+
+    public func isValidDrag(from a: CGPoint, to b: CGPoint) -> Bool { isValid(points: [a, b]) }
 }

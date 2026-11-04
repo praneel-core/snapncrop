@@ -199,6 +199,51 @@ private func pixel(_ image: CGImage, _ x: Int, _ y: Int) -> (Int, Int, Int) {
         #expect(!AnnotationTool.rectangle.isValidDrag(from: .zero, to: CGPoint(x: 50, y: 0)))
     }
 
+    @Test func penFollowsItsPoints() {
+        let frozen = solidImage(width: 200, height: 200)
+        let pen = PenAnnotation(points: [CGPoint(x: 10, y: 50), CGPoint(x: 50, y: 50), CGPoint(x: 90, y: 50)],
+                                style: StrokeStyle(color: RGBA(1, 0, 0), width: 4))
+        let out = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: 200, height: 200),
+                                        selectionSize: CGSize(width: 100, height: 100), annotations: [pen])!
+        let on = pixel(out, 100, 100), off = pixel(out, 100, 130)
+        #expect(on.0 > 200 && on.1 < 60, "expected red on the pen stroke, got \(on)")
+        #expect(off.1 > 240)
+        let end = pixel(out, 178, 100)       // curve is drawn right up to the last point (90pt = 180px)
+        #expect(end.1 < 60, "stroke should reach its final point, got \(end)")
+    }
+
+    @Test func penClickLeavesADot() {
+        let frozen = solidImage(width: 200, height: 200)
+        let pen = PenAnnotation(points: [CGPoint(x: 50, y: 50)], style: StrokeStyle(color: RGBA(1, 0, 0), width: 8))
+        let out = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: 200, height: 200),
+                                        selectionSize: CGSize(width: 100, height: 100), annotations: [pen])!
+        #expect(pixel(out, 100, 100).1 < 60)
+        #expect(AnnotationTool.pen.isValid(points: [CGPoint(x: 1, y: 1)]))
+    }
+
+    @Test func highlighterIsTranslucent() {
+        let frozen = solidImage(width: 200, height: 200)
+        let h = HighlightAnnotation(rect: CGRect(x: 20, y: 20, width: 60, height: 20),
+                                    style: StrokeStyle(color: RGBA(1, 1, 0), width: 4))
+        let out = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: 200, height: 200),
+                                        selectionSize: CGSize(width: 100, height: 100), annotations: [h])!
+        let inside = pixel(out, 100, 60)         // yellow over white: blue drops, red/green stay high
+        #expect(inside.0 > 240 && inside.1 > 240 && inside.2 > 120 && inside.2 < 200, "got \(inside)")
+        let outside = pixel(out, 100, 120)
+        #expect(outside.2 > 240)
+        #expect(h.hitTest(CGPoint(x: 50, y: 30), tolerance: 2))      // filled: inside counts
+    }
+
+    @Test func penAndHighlighterTools() {
+        let path = [CGPoint(x: 0, y: 0), CGPoint(x: 5, y: 5), CGPoint(x: 9, y: 2)]
+        #expect((AnnotationTool.pen.makeShape(points: path, style: .default) as? PenAnnotation)?.points.count == 3)
+        #expect(AnnotationTool.highlighter.makeShape(points: path, style: .default) is HighlightAnnotation)
+        var pen = PenAnnotation(points: path, style: .default)
+        pen.translate(by: CGSize(width: 1, height: 1))
+        #expect(pen.points[0] == CGPoint(x: 1, y: 1))
+        #expect(pen.hitTest(CGPoint(x: 5, y: 6), tolerance: 2))
+    }
+
     @Test func ellipseHitTestAndTool() {
         let e = EllipseAnnotation(rect: CGRect(x: 0, y: 0, width: 100, height: 60), style: .default)
         #expect(e.hitTest(CGPoint(x: 50, y: 0), tolerance: 3))

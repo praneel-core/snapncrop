@@ -7,8 +7,7 @@ import SnapncropCore
 final class CanvasView: NSView {
     private let image: CGImage
     private unowned let session: CaptureSession
-    private var dragStart: CGPoint?
-    private var dragEnd: CGPoint?
+    private var dragPoints: [CGPoint] = []   // mouse path of the current drag
     private var preview: (any Annotation)?
 
     init(frame: CGRect, image: CGImage, session: CaptureSession) {
@@ -31,21 +30,26 @@ final class CanvasView: NSView {
     // MARK: tool input (drag-to-draw shapes; the tool comes from the session)
 
     override func mouseDown(with event: NSEvent) {
-        dragStart = convert(event.locationInWindow, from: nil)
+        dragPoints = [convert(event.locationInWindow, from: nil)]
+        if session.tool == .pen { updatePreview() }      // a click should show a dot straight away
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let start = dragStart else { return }
+        guard let last = dragPoints.last else { return }
         let p = convert(event.locationInWindow, from: nil)
-        dragEnd = p
-        preview = session.tool.makeShape(from: start, to: p, style: session.style)
-        needsDisplay = true
+        guard hypot(p.x - last.x, p.y - last.y) >= 0.5 else { return }   // skip jitter
+        dragPoints.append(p)
+        updatePreview()
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { dragStart = nil; dragEnd = nil; preview = nil; needsDisplay = true }
-        guard let shape = preview, let a = dragStart, let b = dragEnd,
-              session.tool.isValidDrag(from: a, to: b) else { return }
+        defer { dragPoints = []; preview = nil; needsDisplay = true }
+        guard let shape = preview, session.tool.isValid(points: dragPoints) else { return }
         session.commit(shape)
+    }
+
+    private func updatePreview() {
+        preview = session.tool.makeShape(points: dragPoints, style: session.style)
+        needsDisplay = true
     }
 }

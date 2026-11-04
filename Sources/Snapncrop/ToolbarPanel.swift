@@ -59,6 +59,8 @@ final class ToolbarPanel: NSPanel {
             (.ellipse, "circle", "Ellipse (E)"),
             (.line, "line.diagonal", "Line (L)"),
             (.arrow, "arrow.up.right", "Arrow (A)"),
+            (.pen, "scribble", "Pen (P)"),
+            (.highlighter, "highlighter", "Highlighter (H)"),
         ]
         for (i, d) in toolDefs.enumerated() {
             let b = symbolButton(d.1, tip: d.2, action: #selector(pickTool(_:)))
