@@ -178,7 +178,7 @@ final class CanvasView: NSView, NSTextViewDelegate {
         default:
             drag = .draw
             dragPoints = [p]
-            if session.tool == .pen { updatePreview() }       // a click should show a dot straight away
+            if session.tool == .pen || session.tool == .step { updatePreview() }   // show the dot / marker straight away
         }
         needsDisplay = true
     }
@@ -231,7 +231,8 @@ final class CanvasView: NSView, NSTextViewDelegate {
 
     private func updatePreview() {
         preview = session.tool.makeShape(points: dragPoints, style: session.style,
-                                         context: ToolContext(frozen: frozen, displaySize: bounds.size))
+                                         context: ToolContext(frozen: frozen, displaySize: bounds.size,
+                                                              nextStepNumber: AnnotationList.nextStepNumber(in: session.annotations)))
         needsDisplay = true
     }
 

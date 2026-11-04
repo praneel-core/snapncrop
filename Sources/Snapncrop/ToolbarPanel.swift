@@ -93,6 +93,7 @@ final class ToolbarPanel: NSPanel {
             (.arrow, "arrow.up.right", "Arrow  ·  A"),
             (.pen, "scribble", "Pen  ·  P"),
             (.highlighter, "highlighter", "Highlighter  ·  H"),
+            (.step, "1.circle.fill", "Step number  ·  N   (click to place 1, 2, 3…)"),
             (.pixelate, "square.grid.3x3.fill", "Pixelate (hide info)  ·  B   (S/M/L = block size)"),
             (.text, "textformat", "Text  ·  T   (Esc to finish)"),
         ]

@@ -720,3 +720,62 @@ private func stripedImage(width: Int, height: Int) -> CGImage {
         #expect(!AnnotationTool.pixelate.isValid(points: [.zero, CGPoint(x: 30, y: 0)]))
     }
 }
+
+
+// MARK: numbered steps
+
+@Suite struct StepTests {
+    private let red = StrokeStyle(color: .red, width: 4)      // radius 18pt
+
+    @Test func drawsAFilledCircleWithALightNumberInside() {
+        let frozen = solidImage(width: 200, height: 200, rgba: (128, 128, 128, 255))     // mid grey
+        let step = StepAnnotation(center: CGPoint(x: 50, y: 50), number: 7, style: red)
+        let out = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: 200, height: 200),
+                                        selectionSize: CGSize(width: 100, height: 100), annotations: [step])!
+        let rim = pixel(out, 100 + 26, 100)            // 13pt right of centre, inside the circle, clear of the digit
+        #expect(rim.0 > 200 && rim.1 < 80 && rim.2 < 80, "expected the red fill, got \(rim)")
+        var white = 0                                  // the digit is white on red: count white-ish pixels near the centre
+        for y in 88...112 { for x in 90...110 { let p = pixel(out, x, y); if p.0 > 230 && p.1 > 230 && p.2 > 230 { white += 1 } } }
+        #expect(white > 15, "expected a white digit in the middle, found \(white) bright pixels")
+        let outside = pixel(out, 100 + 60, 100)        // 30pt away: outside the 18pt circle
+        #expect(abs(outside.0 - 128) < 4, "background should be untouched, got \(outside)")
+    }
+
+    @Test func numbersFollowThePlacementOrderAndFillGapsAfterDelete() {
+        let a = StepAnnotation(center: .zero, number: 1, style: red)
+        let b = StepAnnotation(center: CGPoint(x: 10, y: 0), number: 2, style: red)
+        let c = StepAnnotation(center: CGPoint(x: 20, y: 0), number: 3, style: red)
+        let note = RectAnnotation(rect: CGRect(x: 0, y: 0, width: 5, height: 5), style: red)
+        let list: [any Annotation] = [a, note, b, c]
+        #expect(AnnotationList.nextStepNumber(in: list) == 4)
+        #expect(AnnotationList.nextStepNumber(in: [note]) == 1)
+
+        let after = AnnotationList.removing(id: b.id, from: list)             // delete step 2
+        let numbers = after.compactMap { ($0 as? StepAnnotation)?.number }
+        #expect(numbers == [1, 2], "step 3 should become 2, got \(numbers)")
+        #expect(after.count == 3)                                              // the rectangle is kept
+        #expect(AnnotationList.removing(id: note.id, from: list).compactMap { ($0 as? StepAnnotation)?.number } == [1, 2, 3])
+    }
+
+    @Test func toolPlacesTheNextNumberAtTheClick() {
+        let frozen = solidImage(width: 20, height: 20)
+        let ctx = ToolContext(frozen: frozen, displaySize: CGSize(width: 20, height: 20), nextStepNumber: 5)
+        let shape = AnnotationTool.step.makeShape(points: [CGPoint(x: 3, y: 4), CGPoint(x: 30, y: 40)], style: red, context: ctx)
+        let step = shape as! StepAnnotation
+        #expect(step.number == 5 && step.center == CGPoint(x: 30, y: 40))     // follows the mouse while dragging
+        #expect(AnnotationTool.step.isValid(points: [CGPoint(x: 1, y: 1)]))   // a single click is enough
+    }
+
+    @Test func sizeResizeHitTestAndContrast() {
+        var s = StepAnnotation(center: CGPoint(x: 50, y: 50), number: 1, style: StrokeStyle(color: .yellow, width: 2))
+        #expect(s.radius == 14)
+        s.applyWidth(8); #expect(s.radius == 26)
+        s.resize(to: CGRect(x: 0, y: 0, width: 80, height: 80))
+        #expect(s.radius == 40 && s.center == CGPoint(x: 40, y: 40))
+        s.applyWidth(4); #expect(s.customRadius == nil && s.radius == 18)      // S/M/L overrides dragged size
+        #expect(s.hitTest(CGPoint(x: 40 + 10, y: 40), tolerance: 2))
+        #expect(!s.hitTest(CGPoint(x: 200, y: 200), tolerance: 2))
+        #expect(s.keepsAspectRatio)
+        #expect(RGBA.yellow.luminance > 0.6 && RGBA.red.luminance < 0.6 && RGBA.black.luminance == 0)
+    }
+}

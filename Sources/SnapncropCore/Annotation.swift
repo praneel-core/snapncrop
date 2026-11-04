@@ -8,6 +8,8 @@ public struct RGBA: Equatable, Codable {
         self.r = r; self.g = g; self.b = b; self.a = a
     }
     public var cgColor: CGColor { CGColor(srgbRed: r, green: g, blue: b, alpha: a) }
+    /// Perceived brightness 0...1; used to pick readable text on top of this colour.
+    public var luminance: Double { 0.299 * r + 0.587 * g + 0.114 * b }
 
     public static let red    = RGBA(0.93, 0.22, 0.20)
     public static let blue   = RGBA(0.20, 0.45, 0.95)
@@ -418,7 +420,10 @@ public struct TextAnnotation: Annotation {
 public struct ToolContext {
     public var frozen: CGImage
     public var displaySize: CGSize      // size of the frozen picture in points
-    public init(frozen: CGImage, displaySize: CGSize) { self.frozen = frozen; self.displaySize = displaySize }
+    public var nextStepNumber: Int      // what the next numbered marker should say
+    public init(frozen: CGImage, displaySize: CGSize, nextStepNumber: Int = 1) {
+        self.frozen = frozen; self.displaySize = displaySize; self.nextStepNumber = nextStepNumber
+    }
 }
 
 /// Replaces a region with large flat blocks of its average colour. It re-samples the ORIGINAL screenshot,
@@ -475,6 +480,62 @@ public struct BlurAnnotation: Annotation {
     public mutating func translate(by d: CGSize) { rect = rect.offsetBy(dx: d.width, dy: d.height) }
 }
 
+// MARK: - Numbered step marker
+
+/// A filled circle with a number in it (1, 2, 3 ...) for walking someone through a screenshot.
+/// S/M/L sets the size; dragging a resize handle overrides it.
+public struct StepAnnotation: Annotation {
+    public let id: UUID
+    public var style: StrokeStyle
+    public var center: CGPoint
+    public var number: Int
+    public var customRadius: CGFloat?
+
+    public init(id: UUID = UUID(), center: CGPoint, number: Int, style: StrokeStyle) {
+        self.id = id; self.center = center; self.number = number; self.style = style
+    }
+
+    /// S/M/L -> 14 / 18 / 26 pt.
+    public var radius: CGFloat { customRadius ?? 10 + style.width * 2 }
+
+    public func draw(in ctx: CGContext) {
+        let r = radius
+        let circle = CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)
+        ctx.saveGState()
+        ctx.setFillColor(style.color.cgColor)
+        ctx.fillEllipse(in: circle)
+        ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.9))          // thin ring so it stands out on any background
+        ctx.setLineWidth(max(1, r / 10))
+        ctx.strokeEllipse(in: circle.insetBy(dx: r / 20, dy: r / 20))
+
+        let digits = String(number)
+        let font = CTFontCreateUIFontForLanguage(.emphasizedSystem, r * (digits.count > 1 ? 0.95 : 1.15), nil)
+            ?? CTFontCreateWithName("Helvetica-Bold" as CFString, r, nil)
+        let ink: CGColor = style.color.luminance > 0.6 ? CGColor(gray: 0, alpha: 1) : CGColor(gray: 1, alpha: 1)
+        let attrs: [CFString: Any] = [kCTFontAttributeName: font, kCTForegroundColorAttributeName: ink]
+        let line = CTLineCreateWithAttributedString(CFAttributedStringCreate(nil, digits as CFString, attrs as CFDictionary))
+        let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)         // our context is y-down; CoreText is y-up
+        ctx.textPosition = CGPoint(x: center.x - width / 2, y: center.y + CTFontGetCapHeight(font) / 2)
+        CTLineDraw(line, ctx)
+        ctx.restoreGState()
+    }
+
+    public var bounds: CGRect { CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2) }
+    public var frame: CGRect { bounds }
+    public var keepsAspectRatio: Bool { true }
+    public mutating func resize(to f: CGRect) {
+        center = CGPoint(x: f.midX, y: f.midY)
+        customRadius = max(8, min(f.width, f.height) / 2)
+    }
+    public mutating func applyWidth(_ width: CGFloat) { style.width = width; customRadius = nil }
+
+    public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
+        hypot(point.x - center.x, point.y - center.y) <= radius + tolerance
+    }
+    public mutating func translate(by d: CGSize) { center = CGPoint(x: center.x + d.width, y: center.y + d.height) }
+}
+
 // MARK: - Working with a list of annotations (select / move / delete)
 
 public enum AnnotationList {
@@ -483,8 +544,25 @@ public enum AnnotationList {
         list.indices.reversed().first { list[$0].hitTest(point, tolerance: tolerance) }
     }
 
+    /// Remove one annotation. If it was a numbered step, the steps after it close the gap (1, 2, 4 -> 1, 2, 3).
     public static func removing(id: UUID, from list: [any Annotation]) -> [any Annotation] {
-        list.filter { $0.id != id }
+        let removedStep = list.contains { $0.id == id && $0 is StepAnnotation }
+        let rest = list.filter { $0.id != id }
+        return removedStep ? renumberingSteps(rest) : rest
+    }
+
+    /// Number the steps 1, 2, 3 ... in the order they were placed.
+    public static func renumberingSteps(_ list: [any Annotation]) -> [any Annotation] {
+        var n = 0
+        return list.map { a in
+            guard var step = a as? StepAnnotation else { return a }
+            n += 1; step.number = n
+            return step
+        }
+    }
+
+    public static func nextStepNumber(in list: [any Annotation]) -> Int {
+        (list.compactMap { ($0 as? StepAnnotation)?.number }.max() ?? 0) + 1
     }
 
     /// Same list with the annotation that has `updated.id` swapped for `updated` (keeps drawing order).
@@ -505,6 +583,7 @@ public enum AnnotationTool: CaseIterable {
     case pen
     case highlighter
     case select    // not a drawing tool: click an annotation to select it, drag to move, Delete removes
+    case step      // numbered marker, placed by a click (drag to fine-tune the position)
     case pixelate  // hides a region behind blocks (needs the screenshot: see ToolContext)
     case text      // placed by a click, typed inline (see CanvasView); not a drag shape
 
@@ -518,6 +597,7 @@ public enum AnnotationTool: CaseIterable {
         case .arrow:       return ArrowAnnotation(start: a, end: b, style: style)
         case .pen:         return PenAnnotation(points: points, style: style)
         case .highlighter: return HighlightAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style)
+        case .step:        return StepAnnotation(center: b, number: context?.nextStepNumber ?? 1, style: style)
         case .pixelate:    return BlurAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style, context: context)
         case .text:        return TextAnnotation(origin: a, text: "", style: style)   // placeholder; see CanvasView
         case .select:      return RectAnnotation(rect: .zero, style: style)           // placeholder; never drawn
@@ -535,6 +615,7 @@ public enum AnnotationTool: CaseIterable {
         case .rectangle, .ellipse, .highlighter, .pixelate: return abs(a.x - b.x) >= 2 && abs(a.y - b.y) >= 2
         case .line, .arrow:                      return hypot(a.x - b.x, a.y - b.y) >= 3
         case .pen:                               return true      // even a click leaves a dot
+        case .step:                              return true      // a click places one
         case .text, .select:                     return false     // never created by dragging
         }
     }
