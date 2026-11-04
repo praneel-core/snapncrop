@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 
 public struct RGBA: Equatable, Codable {
@@ -264,8 +265,73 @@ public struct HighlightAnnotation: Annotation {
     }
 }
 
+// MARK: - Text
+
+/// Text typed directly on the screenshot. `origin` is the top-left of the text box. The colour comes
+/// from the style; the font size is derived from the stroke-width setting (S/M/L -> 18/24/36 pt).
+public struct TextAnnotation: Annotation {
+    public let id: UUID
+    public var style: StrokeStyle
+    public var origin: CGPoint
+    public var text: String
+
+    public init(id: UUID = UUID(), origin: CGPoint, text: String, style: StrokeStyle) {
+        self.id = id; self.origin = origin; self.text = text; self.style = style
+    }
+
+    public var fontSize: CGFloat { 12 + style.width * 3 }
+
+    /// Shared with the on-screen editor so what you type looks the same as what gets exported.
+    public static func font(size: CGFloat) -> CTFont {
+        CTFontCreateUIFontForLanguage(.emphasizedSystem, size, nil)
+            ?? CTFontCreateWithName("Helvetica-Bold" as CFString, size, nil)
+    }
+
+    private var lineHeight: CGFloat {
+        let f = Self.font(size: fontSize)
+        return CTFontGetAscent(f) + CTFontGetDescent(f) + CTFontGetLeading(f)
+    }
+
+    private func makeLines() -> [CTLine] {
+        let attrs: [CFString: Any] = [
+            kCTFontAttributeName: Self.font(size: fontSize),
+            kCTForegroundColorAttributeName: style.color.cgColor,
+        ]
+        return text.components(separatedBy: "\n").map {
+            CTLineCreateWithAttributedString(CFAttributedStringCreate(nil, $0 as CFString, attrs as CFDictionary))
+        }
+    }
+
+    /// Box around the text in the same coordinates as `origin` (top-left based).
+    public var bounds: CGRect {
+        let lines = makeLines()
+        let width = lines.map { CTLineGetTypographicBounds($0, nil, nil, nil) }.max() ?? 0
+        return CGRect(x: origin.x, y: origin.y, width: CGFloat(width), height: lineHeight * CGFloat(lines.count))
+    }
+
+    public func draw(in ctx: CGContext) {
+        guard !text.isEmpty else { return }
+        let f = Self.font(size: fontSize)
+        let ascent = CTFontGetAscent(f), lh = lineHeight
+        ctx.saveGState()
+        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)      // our context is y-down; CoreText is y-up
+        for (i, line) in makeLines().enumerated() {
+            ctx.textPosition = CGPoint(x: origin.x, y: origin.y + ascent + CGFloat(i) * lh)
+            CTLineDraw(line, ctx)
+        }
+        ctx.restoreGState()
+    }
+
+    public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
+        bounds.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+    }
+
+    public mutating func translate(by d: CGSize) {
+        origin = CGPoint(x: origin.x + d.width, y: origin.y + d.height)
+    }
+}
+
 // MARK: - Phase 2 / 3 stubs (not built yet; each is one small struct like RectAnnotation)
-// TODO(Phase 2): TextAnnotation (inline editor).
 // TODO(Phase 3): BlurAnnotation (pixelate the underlying crop), StepMarkerAnnotation (numbered circles).
 
 /// Tools shown in the toolbar. Add a case here, then a branch in `makeShape`, and the toolbar/keys follow.
@@ -276,7 +342,7 @@ public enum AnnotationTool: CaseIterable {
     case arrow
     case pen
     case highlighter
-    // TODO(Phase 2): text
+    case text      // placed by a click, typed inline (see CanvasView); not a drag shape
 
     /// Builds the shape from the mouse path of a drag (first point = mouse down, last = current position).
     public func makeShape(points: [CGPoint], style: StrokeStyle) -> any Annotation {
@@ -288,6 +354,7 @@ public enum AnnotationTool: CaseIterable {
         case .arrow:       return ArrowAnnotation(start: a, end: b, style: style)
         case .pen:         return PenAnnotation(points: points, style: style)
         case .highlighter: return HighlightAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style)
+        case .text:        return TextAnnotation(origin: a, text: "", style: style)   // placeholder; see CanvasView
         }
     }
 
@@ -302,6 +369,7 @@ public enum AnnotationTool: CaseIterable {
         case .rectangle, .ellipse, .highlighter: return abs(a.x - b.x) >= 2 && abs(a.y - b.y) >= 2
         case .line, .arrow:                      return hypot(a.x - b.x, a.y - b.y) >= 3
         case .pen:                               return true      // even a click leaves a dot
+        case .text:                              return false     // never created by dragging
         }
     }
 

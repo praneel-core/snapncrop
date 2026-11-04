@@ -32,7 +32,11 @@ final class CaptureSession {
         didSet { SettingsStore.shared.strokeColor = style.color; SettingsStore.shared.strokeWidth = style.width }
     }
     private(set) var tool: AnnotationTool = .rectangle
-    func setTool(_ t: AnnotationTool) { tool = t; toolbar?.refreshTool(t) }
+    func setTool(_ t: AnnotationTool) { finishTextEditing(); tool = t; toolbar?.refreshTool(t) }
+
+    // Text typing is owned by the canvas; the session just makes sure it is finished before output.
+    var isEditingText: Bool { canvas?.isEditingText ?? false }
+    func finishTextEditing() { canvas?.commitText() }
     var annotations: [any Annotation] { history.current }
     var canvas: CanvasView?
 
@@ -105,8 +109,8 @@ final class CaptureSession {
         canvas?.needsDisplay = true
         refreshToolbar()
     }
-    func undo() { if history.undo() { canvas?.needsDisplay = true; refreshToolbar() } }
-    func redo() { if history.redo() { canvas?.needsDisplay = true; refreshToolbar() } }
+    func undo() { if isEditingText { canvas?.cancelText(); return }; if history.undo() { canvas?.needsDisplay = true; refreshToolbar() } }
+    func redo() { finishTextEditing(); if history.redo() { canvas?.needsDisplay = true; refreshToolbar() } }
     func refreshToolbar() { toolbar?.refresh(canUndo: history.canUndo, canRedo: history.canRedo) }
 
     // MARK: output
@@ -120,6 +124,7 @@ final class CaptureSession {
     }
 
     func copyAndClose() {
+        finishTextEditing()
         guard let png = renderPNG() else { fail("Could not render the screenshot."); return }
         ExportService.copyToClipboard(png: png)
         Log.capture.info("copied \(png.count) bytes to clipboard")
@@ -130,6 +135,7 @@ final class CaptureSession {
     }
 
     func saveAndClose() {
+        finishTextEditing()
         guard let png = renderPNG() else { fail("Could not render the screenshot."); return }
         do {
             let url = try ExportService.save(png: png)

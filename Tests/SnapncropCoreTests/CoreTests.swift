@@ -234,6 +234,50 @@ private func pixel(_ image: CGImage, _ x: Int, _ y: Int) -> (Int, Int, Int) {
         #expect(h.hitTest(CGPoint(x: 50, y: 30), tolerance: 2))      // filled: inside counts
     }
 
+    /// How many pixels in the rectangle (pixel coords, top-left origin) are clearly red.
+    private func redCount(_ img: CGImage, x: ClosedRange<Int>, y: ClosedRange<Int>) -> Int {
+        var n = 0
+        for yy in y { for xx in x { let p = pixel(img, xx, yy); if p.0 > 200 && p.1 < 100 && p.2 < 100 { n += 1 } } }
+        return n
+    }
+
+    @Test func textIsDrawnInsideItsBoundsOnly() {
+        let frozen = solidImage(width: 400, height: 200)                       // 200x100 pt at 2x
+        let t = TextAnnotation(origin: CGPoint(x: 10, y: 10), text: "HIHI",
+                               style: StrokeStyle(color: RGBA(1, 0, 0), width: 4))   // 24pt font
+        let out = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: 400, height: 200),
+                                        selectionSize: CGSize(width: 200, height: 100), annotations: [t])!
+        let b = t.bounds
+        #expect(b.width > 20 && b.height > 20 && b.minX == 10 && b.minY == 10)
+        let inside = redCount(out, x: Int(b.minX * 2)...Int(b.maxX * 2), y: Int(b.minY * 2)...Int(b.maxY * 2))
+        #expect(inside > 100, "expected red glyph pixels inside the text box, got \(inside)")
+        let farAway = redCount(out, x: 300...390, y: 100...190)
+        #expect(farAway == 0)
+        // Text must sit the right way up: the glyph ink should be in the upper box area, not mirrored below it.
+        let below = redCount(out, x: 20...390, y: Int(b.maxY * 2) + 6...199)
+        #expect(below == 0, "text leaked below its box (upside down?)")
+    }
+
+    @Test func textBoundsGrowWithContentAndSize() {
+        let s = StrokeStyle(color: .red, width: 4)
+        let one = TextAnnotation(origin: .zero, text: "Hello", style: s)
+        let two = TextAnnotation(origin: .zero, text: "Hello\nWorld!!", style: s)
+        #expect(two.bounds.height > one.bounds.height * 1.8)
+        #expect(two.bounds.width > one.bounds.width)
+        let big = TextAnnotation(origin: .zero, text: "Hello", style: StrokeStyle(color: .red, width: 8))
+        #expect(big.fontSize == 36 && big.bounds.width > one.bounds.width)
+        #expect(TextAnnotation(origin: .zero, text: "", style: s).bounds.width == 0)
+    }
+
+    @Test func textHitTestMoveAndNotADragTool() {
+        var t = TextAnnotation(origin: CGPoint(x: 10, y: 10), text: "Hi", style: .default)
+        #expect(t.hitTest(CGPoint(x: 12, y: 15), tolerance: 2))
+        #expect(!t.hitTest(CGPoint(x: 300, y: 300), tolerance: 2))
+        t.translate(by: CGSize(width: 5, height: 5))
+        #expect(t.origin == CGPoint(x: 15, y: 15))
+        #expect(!AnnotationTool.text.isValid(points: [.zero, CGPoint(x: 50, y: 50)]))
+    }
+
     @Test func penAndHighlighterTools() {
         let path = [CGPoint(x: 0, y: 0), CGPoint(x: 5, y: 5), CGPoint(x: 9, y: 2)]
         #expect((AnnotationTool.pen.makeShape(points: path, style: .default) as? PenAnnotation)?.points.count == 3)
