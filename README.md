@@ -12,7 +12,7 @@ Press a shortcut, the screen freezes, drag over what you want (or click a window
 
 ## Contents
 
-1. [Quick start](#quick-start)
+1. [Quick start](#quick-start) · [Download without building](#download-without-building)
 2. [Taking a screenshot](#taking-a-screenshot)
 3. [Annotation tools](#annotation-tools)
 4. [Editing what you drew](#editing-what-you-drew)
@@ -28,6 +28,7 @@ Press a shortcut, the screen freezes, drag over what you want (or click a window
 14. [Known limitations](#known-limitations)
 15. [Project layout](#project-layout)
 16. [Development](#development)
+17. [License](#license)
 
 ---
 
@@ -43,6 +44,17 @@ open ~/Applications/Snapncrop.app
 Then press **⌃⌥S** (Control + Option + S). The first time, macOS asks for Screen Recording permission: turn on **Snapncrop**, quit it from its menu bar icon, and open it again. See [Permissions](#permissions).
 
 You need the Xcode **Command Line Tools** (`xcode-select --install`). Full Xcode is not required.
+
+### Download without building
+
+If a zip is attached to the [Releases page](https://github.com/praneel-core/snapncrop/releases) you can skip the build:
+
+1. Download `Snapncrop-<version>-arm64.zip` (Apple Silicon Macs; macOS 14 or later) and unzip it.
+2. Move `Snapncrop.app` to `~/Applications` (or `/Applications`).
+3. The app is **not notarized by Apple**, so macOS blocks it the first time. Open it once, then go to System Settings → Privacy & Security, scroll down and click **Open Anyway**. (Alternatively, in Terminal: `xattr -dr com.apple.quarantine ~/Applications/Snapncrop.app`.) The exact wording varies by macOS version.
+4. Grant Screen Recording permission (see [Permissions](#permissions)), quit and reopen.
+
+Because the downloadable app is signed ad-hoc rather than with a stable certificate, macOS may ask you to grant Screen Recording again after you replace it with a newer version. Building it yourself with the local certificate (above) avoids that. Intel Macs: build from source.
 
 ---
 
@@ -206,6 +218,8 @@ Requirements: macOS 14+, Command Line Tools (`xcode-select --install`). Built wi
 
 **Launch at login** works when the app runs from `~/Applications` (use `./build.sh install`).
 
+**Making a release zip** (for maintainers): `./scripts/make_release.sh` builds, signs ad-hoc, and writes `build/Snapncrop-<version>-<arch>.zip` plus its SHA-256 checksum, ready to attach to a GitHub Release. It builds for this Mac's architecture only (a universal build needs full Xcode). It is not notarized; that needs a paid Apple Developer account.
+
 **Logs** (everything is logged locally):
 
 ```bash
@@ -267,6 +281,7 @@ Package.swift                 Swift package: SnapncropCore (logic), Snapncrop (a
 build.sh                      build + sign (+ run / install)
 scripts/
   create_signing_cert.sh      one-time local signing certificate
+  make_release.sh             builds a zip for a GitHub Release (ad-hoc signed)
   test.sh                     runs the tests (adds framework paths needed with Command Line Tools only)
 Resources/Info.plist          bundle id, menu-bar-only app, snapncrop:// URL scheme
 Sources/SnapncropCore/        pure logic, no windows, fully unit-tested
@@ -295,6 +310,7 @@ Sources/Snapncrop/            the app
   SettingsStore, LoginItem, RecentCaptures, Log
 Tests/SnapncropCoreTests/     unit tests (Swift Testing)
 ARCHITECTURE.md               how it fits together and why
+LICENSE                       MIT
 ```
 
 ---
@@ -318,3 +334,9 @@ The tests render annotations into real images and check actual pixels (for examp
 4. Add tests that render it and check pixels.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the design in more depth.
+
+---
+
+## License
+
+MIT. See [LICENSE](LICENSE). You are free to use, copy, modify and share it.

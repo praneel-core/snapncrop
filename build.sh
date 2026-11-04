@@ -20,7 +20,11 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 # Signing: macOS ties the Screen Recording permission to the app's signature. A stable identity
 # keeps the permission across rebuilds; ad-hoc signing (`-`) changes every build and resets it.
-if security find-identity -p codesigning | grep -q "\"$IDENTITY\""; then
+if [ "$IDENTITY" = "-" ]; then
+  # Release build for other people: their Macs don't have your local certificate, so sign ad-hoc.
+  codesign --force --sign - --identifier "$BUNDLE_ID" "$APP"
+  echo "Signed ad-hoc (release build)."
+elif security find-identity -p codesigning | grep -q "\"$IDENTITY\""; then
   codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP"
   echo "Signed with '$IDENTITY' (permission will survive rebuilds)."
 else
