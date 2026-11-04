@@ -180,13 +180,26 @@ final class CaptureSession {
 
     // MARK: output
 
+    /// The finished picture: crop plus annotations, at native pixel resolution.
+    private func renderImage() -> CGImage? {
+        guard state == .editing, let shot = activeShot, let sel = selection, let crop = pixelCrop else { return nil }
+        return ExportRenderer.render(frozen: shot.image, pixelCrop: crop, selectionSize: sel.size,
+                                     annotations: annotations, selectionOrigin: sel.origin)
+    }
+
     private func renderPNG() -> Data? {
-        guard state == .editing, let shot = activeShot, let sel = selection, let crop = pixelCrop,
-              let img = ExportRenderer.render(frozen: shot.image, pixelCrop: crop,
-                                              selectionSize: sel.size, annotations: annotations,
-                                              selectionOrigin: sel.origin)
-        else { return nil }
+        guard let shot = activeShot, let img = renderImage() else { return nil }
         return ExportRenderer.pngData(from: img, scale: shot.scale)
+    }
+
+    /// Leave the finished picture floating on screen exactly where it was selected.
+    func pinAndClose() {
+        finishTextEditing()
+        guard let shot = activeShot, let sel = selection, let img = renderImage() else { return }
+        let onScreen = CGRect(x: shot.frame.minX + sel.minX, y: shot.frame.maxY - sel.maxY,
+                              width: sel.width, height: sel.height)               // top-left view space -> screen space
+        end(.finished)
+        PinManager.shared.pin(image: img, scale: shot.scale, frame: onScreen)
     }
 
     // MARK: OCR (copy the text in the selection)

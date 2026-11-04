@@ -69,6 +69,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
         menu.addItem(.separator())
 
+        if PinManager.shared.count > 0 {
+            menu.addItem(action("Close all pinned screenshots (\(PinManager.shared.count))", #selector(closePins)))
+            menu.addItem(.separator())
+        }
+
         // 4. Toggles (remembered)
         menu.addItem(toggle("Four-finger tap to capture", #selector(toggleGesture), SettingsStore.shared.gestureEnabled))
         menu.addItem(toggle("Also save a file when copying", #selector(toggleAutoSave), SettingsStore.shared.alsoSaveOnCopy))
@@ -95,6 +100,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     // MARK: actions
 
+    @objc private func closePins() { PinManager.shared.closeAll() }
     @objc private func openPreferences() { onPreferences?() }
     @objc private func capture() { router.fire(.menu) }
     @objc private func fixPermission() { PermissionManager.showHelp() }

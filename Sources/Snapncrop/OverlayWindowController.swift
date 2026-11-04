@@ -146,6 +146,8 @@ final class OverlayView: NSView {
         case 36, 76: if session.state == .editing { session.copyAndClose() } // Return / Enter
         case 8 where session.state == .editing && event.modifierFlags.contains(.control):  // Ctrl+C
             session.copyAndClose()
+        case 35 where session.state == .editing && event.modifierFlags.contains(.control):  // Ctrl+P = pin to screen
+            session.pinAndClose()
         case 17 where session.state == .editing && event.modifierFlags.contains(.control):  // Ctrl+T = copy text (OCR)
             session.copyTextAndClose()
         case 1 where session.state == .editing && event.modifierFlags.contains(.control):  // Ctrl+S
@@ -180,6 +182,7 @@ final class OverlayView: NSView {
         case ("c", [.command]), ("c", [.control]): session.copyAndClose(); return true
         case ("s", [.command]), ("s", [.control]): session.saveAndClose(); return true
         case ("t", [.control]): session.copyTextAndClose(); return true
+        case ("p", [.control]): session.pinAndClose(); return true
         case ("z", [.command]): session.undo(); return true
         case ("z", [.command, .shift]): session.redo(); return true
         default: return false

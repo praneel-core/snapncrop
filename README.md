@@ -12,6 +12,7 @@ Repo: https://github.com/praneel-core/snapncrop
 | **Copy to clipboard** | **Ctrl+C** (also ⌘C, Return, or the Copy button) |
 | **Save** | **Ctrl+S** (also ⌘S or Save button) → `~/Pictures/Screenshots/Snapncrop <date> at <time>.png` |
 | **Copy the text** in the selection (OCR) | **Ctrl+T**, or the text-viewfinder button. Runs on-device with Apple's Vision framework |
+| **Pin to screen** | **Ctrl+P**, or the pin button. The picture floats above your windows where you selected it. Drag to move, scroll/pinch to resize, right-click for copy / save / opacity / close |
 | Cancel | Esc |
 
 ## Menu bar menu

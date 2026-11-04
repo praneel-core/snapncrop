@@ -813,3 +813,29 @@ private func stripedImage(width: Int, height: Int) -> CGImage {
         #expect(TextRecognizer.recognize(solidImage(width: 200, height: 100)) == "")
     }
 }
+
+
+// MARK: pin to screen
+
+@Suite struct PinTests {
+    private let screen = CGSize(width: 1000, height: 800)
+
+    @Test func zoomKeepsAspectAndCentre() {
+        let f = CGRect(x: 100, y: 100, width: 200, height: 100)
+        let r = PinGeometry.resized(f, factor: 1.5, maxSize: screen)
+        #expect(r.width == 300 && r.height == 150)
+        #expect(r.midX == f.midX && r.midY == f.midY)
+        #expect(abs(r.width / r.height - 2) < 0.0001)
+    }
+
+    @Test func zoomIsClampedSmallAndLarge() {
+        let f = CGRect(x: 100, y: 100, width: 200, height: 100)
+        #expect(PinGeometry.resized(f, factor: 0.01, maxSize: screen).width == 80)          // never vanishes
+        let big = PinGeometry.resized(f, factor: 100, maxSize: screen)
+        #expect(big.width <= 1000 && big.height <= 800)
+        #expect(abs(big.width / big.height - 2) < 0.0001)                                   // aspect kept when height is the limit
+        let tall = PinGeometry.resized(CGRect(x: 0, y: 0, width: 100, height: 400), factor: 100, maxSize: screen)
+        #expect(tall.height == 800 && tall.width == 200)
+        #expect(PinGeometry.resized(f, factor: 0, maxSize: screen) == f)                    // nonsense input is ignored
+    }
+}

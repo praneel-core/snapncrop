@@ -130,3 +130,16 @@ extension Geometry {
         return CGPoint(x: x, y: y)
     }
 }
+
+
+/// Resizing a pinned screenshot with the scroll wheel / pinch: keeps the proportions and the centre.
+public enum PinGeometry {
+    public static func resized(_ f: CGRect, factor: CGFloat, minWidth: CGFloat = 80, maxSize: CGSize) -> CGRect {
+        guard f.width > 0, f.height > 0, factor > 0 else { return f }
+        let aspect = f.height / f.width
+        var w = max(minWidth, min(f.width * factor, maxSize.width))
+        var h = w * aspect
+        if h > maxSize.height { h = maxSize.height; w = h / aspect }
+        return CGRect(x: f.midX - w / 2, y: f.midY - h / 2, width: w, height: h)
+    }
+}
