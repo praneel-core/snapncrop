@@ -19,6 +19,12 @@ final class SettingsStore {
         set { d.set(newValue, forKey: "gestureEnabled") }
     }
 
+    /// "Copy" also writes a PNG into the screenshots folder.
+    var alsoSaveOnCopy: Bool {
+        get { d.bool(forKey: "alsoSaveOnCopy") }
+        set { d.set(newValue, forKey: "alsoSaveOnCopy") }
+    }
+
     var gestureDebug: Bool {
         get { d.bool(forKey: "gestureDebug") }
         set { d.set(newValue, forKey: "gestureDebug") }

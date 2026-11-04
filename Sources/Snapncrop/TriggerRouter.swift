@@ -2,6 +2,10 @@ import AppKit
 
 enum Trigger: String { case hotkey, menu, urlScheme, gesture }
 
+extension Notification.Name {
+    static let captureActiveChanged = Notification.Name("snapncrop.captureActiveChanged")
+}
+
 /// The ONE entry point for starting a capture. Hotkey, menu, URL scheme and trackpad gesture
 /// all call `fire(_:)`; none of them touch capture code directly. Adding a new trigger later
 /// (e.g. a Shortcuts action) means calling this and nothing else.
@@ -20,9 +24,13 @@ final class TriggerRouter {
                 do {
                     let shots = try await CaptureService.captureAllDisplays()
                     let s = CaptureSession(shots: shots)
-                    s.onEnd = { [weak self] in self?.session = nil }
+                    s.onEnd = { [weak self] in
+                        self?.session = nil
+                        NotificationCenter.default.post(name: .captureActiveChanged, object: false)
+                    }
                     session = s
                     s.present()
+                    NotificationCenter.default.post(name: .captureActiveChanged, object: true)
                 } catch {
                     // Nothing is on screen yet, so there is nothing to tear down; just explain.
                     Log.capture.error("capture failed: \(error.localizedDescription)")

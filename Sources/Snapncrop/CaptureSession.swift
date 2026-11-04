@@ -122,6 +122,9 @@ final class CaptureSession {
         guard let png = renderPNG() else { fail("Could not render the screenshot."); return }
         ExportService.copyToClipboard(png: png)
         Log.capture.info("copied \(png.count) bytes to clipboard")
+        var saved: URL?
+        if SettingsStore.shared.alsoSaveOnCopy { saved = try? ExportService.save(png: png) }
+        remember(png, savedAs: saved)
         end(.finished)
     }
 
@@ -130,10 +133,16 @@ final class CaptureSession {
         do {
             let url = try ExportService.save(png: png)
             Log.capture.info("saved \(url.path)")
+            remember(png, savedAs: url)
             end(.finished)
         } catch {
             fail("Could not save the file: \(error.localizedDescription)")
         }
+    }
+
+    private func remember(_ png: Data, savedAs: URL?) {
+        guard let crop = pixelCrop else { return }
+        RecentCaptures.shared.add(png: png, width: Int(crop.width), height: Int(crop.height), savedAs: savedAs)
     }
 
     private func fail(_ message: String) {
