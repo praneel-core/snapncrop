@@ -386,3 +386,76 @@ private func fire(_ d: inout FourFingerTapDetector, _ t: [TouchPoint], _ ts: Dou
         #expect(fire(&d, fingers(3), 2.08))
     }
 }
+
+
+// MARK: select / move / delete
+
+@Suite struct SelectionTests {
+    private let red = StrokeStyle(color: .red, width: 4)
+
+    @Test func everyAnnotationHasSensibleBounds() {
+        let all: [any Annotation] = [
+            RectAnnotation(rect: CGRect(x: 10, y: 10, width: 40, height: 20), style: red),
+            EllipseAnnotation(rect: CGRect(x: 10, y: 10, width: 40, height: 20), style: red),
+            LineAnnotation(start: CGPoint(x: 10, y: 10), end: CGPoint(x: 50, y: 30), style: red),
+            ArrowAnnotation(start: CGPoint(x: 10, y: 10), end: CGPoint(x: 50, y: 30), style: red),
+            PenAnnotation(points: [CGPoint(x: 10, y: 10), CGPoint(x: 50, y: 30)], style: red),
+            HighlightAnnotation(rect: CGRect(x: 10, y: 10, width: 40, height: 20), style: red),
+            TextAnnotation(origin: CGPoint(x: 10, y: 10), text: "Hi", style: red),
+        ]
+        for a in all {
+            #expect(a.bounds.minX <= 10 && a.bounds.minY <= 10, "\(type(of: a)) bounds start too late: \(a.bounds)")
+            #expect(a.bounds.width > 0 && a.bounds.height > 0, "\(type(of: a)) has empty bounds")
+        }
+        // Outline shapes include the stroke thickness (2pt each side at width 4).
+        #expect(all[0].bounds == CGRect(x: 8, y: 8, width: 44, height: 24))
+    }
+
+    @Test func topmostPicksTheLastDrawnAndMissesEmptySpace() {
+        // Two lines crossing at (50, 50): the second one is drawn on top.
+        let l1 = LineAnnotation(start: CGPoint(x: 0, y: 50), end: CGPoint(x: 100, y: 50), style: red)
+        let l2 = LineAnnotation(start: CGPoint(x: 50, y: 0), end: CGPoint(x: 50, y: 100), style: red)
+        let list: [any Annotation] = [l1, l2]
+        #expect(AnnotationList.topmost(at: CGPoint(x: 50, y: 50), in: list) == 1)
+        #expect(AnnotationList.topmost(at: CGPoint(x: 20, y: 50), in: list) == 0)
+        #expect(AnnotationList.topmost(at: CGPoint(x: 90, y: 90), in: list) == nil)
+    }
+
+    @Test func movingThroughTheExistentialChangesTheCopyNotTheOriginal() {
+        let original: any Annotation = RectAnnotation(rect: CGRect(x: 0, y: 0, width: 10, height: 10), style: red)
+        var moved = original
+        moved.translate(by: CGSize(width: 5, height: 7))
+        #expect((moved as? RectAnnotation)?.rect.origin == CGPoint(x: 5, y: 7))
+        #expect((original as? RectAnnotation)?.rect.origin == .zero)
+        #expect(moved.id == original.id)       // same identity, so it can replace the original
+    }
+
+    @Test func replaceAndDeleteKeepOrderAndAreUndoable() {
+        let a = RectAnnotation(rect: CGRect(x: 0, y: 0, width: 10, height: 10), style: red)
+        let b = EllipseAnnotation(rect: CGRect(x: 20, y: 20, width: 10, height: 10), style: red)
+        var h = History<[any Annotation]>(initial: [])
+        h.commit([a]); h.commit([a, b])
+
+        var movedA = a; movedA.translate(by: CGSize(width: 100, height: 0))
+        h.commit(AnnotationList.replacing(movedA, in: h.current))
+        #expect(h.current.count == 2 && h.current[0].id == a.id)          // order kept
+        #expect((h.current[0] as? RectAnnotation)?.rect.minX == 100)
+
+        h.commit(AnnotationList.removing(id: b.id, from: h.current))
+        #expect(h.current.count == 1)
+        h.undo(); #expect(h.current.count == 2)                          // delete undone
+        h.undo(); #expect((h.current[0] as? RectAnnotation)?.rect.minX == 0)   // move undone
+    }
+
+    @Test func movedAnnotationExportsAtItsNewPlace() {
+        let frozen = solidImage(width: 200, height: 200)
+        var r = RectAnnotation(rect: CGRect(x: 10, y: 10, width: 30, height: 30),
+                               style: StrokeStyle(color: RGBA(1, 0, 0), width: 4))
+        r.translate(by: CGSize(width: 40, height: 0))                     // top edge now spans x 50...80pt at y=10pt
+        let out = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: 200, height: 200),
+                                        selectionSize: CGSize(width: 100, height: 100), annotations: [r])!
+        #expect(pixel(out, 130, 20).1 < 60)       // x = 65pt on the new top edge: red
+        #expect(pixel(out, 40, 20).1 > 240)       // old position: white again
+        #expect(AnnotationTool.select.isValid(points: [.zero, CGPoint(x: 50, y: 50)]) == false)
+    }
+}

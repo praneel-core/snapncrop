@@ -29,13 +29,19 @@ final class CanvasView: NSView, NSTextViewDelegate {
 
     override var isFlipped: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: session.tool == .select ? .arrow : (session.tool == .text ? .iBeam : .crosshair))
+    }
+    func toolChanged() { window?.invalidateCursorRects(for: self); needsDisplay = true }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         Drawing.drawTopLeft(image, in: bounds, ctx: ctx)
-        for a in session.annotations { a.draw(in: ctx) }
+        for a in session.annotations {
+            if let m = moving, m.id == a.id { m.draw(in: ctx) } else { a.draw(in: ctx) }
+        }
         preview?.draw(in: ctx)
+        drawSelectionOutline(ctx)
     }
 
     // MARK: tool input (drag-to-draw shapes; the tool comes from the session)
@@ -43,12 +49,14 @@ final class CanvasView: NSView, NSTextViewDelegate {
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         commitText()                                     // clicking away finishes any text being typed
+        if session.tool == .select { selectDown(at: p); return }
         if session.tool == .text { beginText(at: p); return }
         dragPoints = [p]
         if session.tool == .pen { updatePreview() }      // a click should show a dot straight away
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if session.tool == .select { moveDrag(to: convert(event.locationInWindow, from: nil)); return }
         guard let last = dragPoints.last else { return }
         let p = convert(event.locationInWindow, from: nil)
         guard hypot(p.x - last.x, p.y - last.y) >= 0.5 else { return }   // skip jitter
@@ -57,6 +65,7 @@ final class CanvasView: NSView, NSTextViewDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if session.tool == .select { moveEnd(); return }
         defer { dragPoints = []; preview = nil; needsDisplay = true }
         guard let shape = preview, session.tool.isValid(points: dragPoints) else { return }
         session.commit(shape)
@@ -65,6 +74,48 @@ final class CanvasView: NSView, NSTextViewDelegate {
     private func updatePreview() {
         preview = session.tool.makeShape(points: dragPoints, style: session.style)
         needsDisplay = true
+    }
+
+    // MARK: select / move
+
+    private var moving: (any Annotation)?        // live copy being dragged; committed on mouse up
+    private var lastDragPoint = CGPoint.zero
+    private var totalMoved = CGSize.zero
+
+    private func selectDown(at p: CGPoint) {
+        if let i = AnnotationList.topmost(at: p, in: session.annotations) {
+            let hit = session.annotations[i]
+            session.select(hit.id)
+            moving = hit; lastDragPoint = p; totalMoved = .zero
+        } else {
+            session.select(nil)
+        }
+    }
+
+    private func moveDrag(to p: CGPoint) {
+        guard moving != nil else { return }
+        let d = CGSize(width: p.x - lastDragPoint.x, height: p.y - lastDragPoint.y)
+        moving?.translate(by: d)
+        totalMoved.width += d.width; totalMoved.height += d.height
+        lastDragPoint = p
+        needsDisplay = true
+    }
+
+    private func moveEnd() {
+        defer { moving = nil; needsDisplay = true }
+        guard let m = moving, hypot(totalMoved.width, totalMoved.height) >= 1 else { return }   // a plain click only selects
+        session.replace(m)
+    }
+
+    private func drawSelectionOutline(_ ctx: CGContext) {
+        guard session.tool == .select, let id = session.selectedID else { return }
+        guard let a = (moving?.id == id ? moving : nil) ?? session.selectedAnnotation else { return }
+        ctx.saveGState()
+        ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
+        ctx.setLineWidth(1.5)
+        ctx.setLineDash(phase: 0, lengths: [5, 3])
+        ctx.stroke(a.bounds.insetBy(dx: -3, dy: -3))
+        ctx.restoreGState()
     }
 
     // MARK: inline text

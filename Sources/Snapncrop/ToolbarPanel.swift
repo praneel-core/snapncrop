@@ -86,6 +86,7 @@ final class ToolbarPanel: NSPanel {
     private func buildUI() {
         // Tools. To add one: new case in AnnotationTool + a row here.
         let toolDefs: [(AnnotationTool, String, String)] = [
+            (.select, "cursorarrow", "Select & move  ·  V   (Delete removes)"),
             (.rectangle, "rectangle", "Rectangle  ·  R"),
             (.ellipse, "circle", "Ellipse  ·  E"),
             (.line, "line.diagonal", "Line  ·  L"),

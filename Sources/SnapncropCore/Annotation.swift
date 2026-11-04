@@ -32,6 +32,8 @@ public protocol Annotation {
     var style: StrokeStyle { get set }
     /// Draw into a context whose origin is top-left and whose unit is one point.
     func draw(in ctx: CGContext)
+    /// Box around everything drawn, including stroke thickness. Used for the selection outline.
+    var bounds: CGRect { get }
     func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool
     mutating func translate(by delta: CGSize)
 }
@@ -57,6 +59,8 @@ public struct RectAnnotation: Annotation {
     }
 
     /// Outline-only hit test: true when the point is near the border.
+    public var bounds: CGRect { rect.insetBy(dx: -style.width / 2, dy: -style.width / 2) }
+
     public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
         let t = tolerance + style.width / 2
         return rect.insetBy(dx: -t, dy: -t).contains(point) && !rect.insetBy(dx: t, dy: t).contains(point)
@@ -87,6 +91,8 @@ public struct EllipseAnnotation: Annotation {
     }
 
     /// Outline-only hit test using the ellipse equation: points near the curve count.
+    public var bounds: CGRect { rect.insetBy(dx: -style.width / 2, dy: -style.width / 2) }
+
     public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
         let a = rect.width / 2, b = rect.height / 2
         guard a > 0, b > 0 else { return false }
@@ -129,6 +135,8 @@ public struct LineAnnotation: Annotation {
         ctx.move(to: start); ctx.addLine(to: end); ctx.strokePath()
         ctx.restoreGState()
     }
+
+    public var bounds: CGRect { Geometry.normalizedRect(from: start, to: end).insetBy(dx: -style.width / 2, dy: -style.width / 2) }
 
     public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
         distance(from: point, toSegment: start, end) <= tolerance + style.width / 2
@@ -178,6 +186,8 @@ public struct ArrowAnnotation: Annotation {
         ctx.restoreGState()
     }
 
+    public var bounds: CGRect { Geometry.normalizedRect(from: start, to: end).insetBy(dx: -max(style.width, 12), dy: -max(style.width, 12)) }
+
     public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
         distance(from: point, toSegment: start, end) <= tolerance + max(style.width, 8) / 2
     }
@@ -223,6 +233,14 @@ public struct PenAnnotation: Annotation {
         ctx.restoreGState()
     }
 
+    public var bounds: CGRect {
+        guard let f = points.first else { return .zero }
+        var minX = f.x, maxX = f.x, minY = f.y, maxY = f.y
+        for p in points { minX = min(minX, p.x); maxX = max(maxX, p.x); minY = min(minY, p.y); maxY = max(maxY, p.y) }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            .insetBy(dx: -style.width / 2, dy: -style.width / 2)
+    }
+
     public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
         let t = tolerance + style.width / 2
         if points.count == 1 { return hypot(point.x - points[0].x, point.y - points[0].y) <= t }
@@ -256,6 +274,8 @@ public struct HighlightAnnotation: Annotation {
     }
 
     /// Filled shape: anywhere inside counts.
+    public var bounds: CGRect { rect }
+
     public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
         rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
     }
@@ -331,6 +351,24 @@ public struct TextAnnotation: Annotation {
     }
 }
 
+// MARK: - Working with a list of annotations (select / move / delete)
+
+public enum AnnotationList {
+    /// Index of the topmost (most recently drawn) annotation under `point`, if any.
+    public static func topmost(at point: CGPoint, in list: [any Annotation], tolerance: CGFloat = 6) -> Int? {
+        list.indices.reversed().first { list[$0].hitTest(point, tolerance: tolerance) }
+    }
+
+    public static func removing(id: UUID, from list: [any Annotation]) -> [any Annotation] {
+        list.filter { $0.id != id }
+    }
+
+    /// Same list with the annotation that has `updated.id` swapped for `updated` (keeps drawing order).
+    public static func replacing(_ updated: any Annotation, in list: [any Annotation]) -> [any Annotation] {
+        list.map { $0.id == updated.id ? updated : $0 }
+    }
+}
+
 // MARK: - Phase 2 / 3 stubs (not built yet; each is one small struct like RectAnnotation)
 // TODO(Phase 3): BlurAnnotation (pixelate the underlying crop), StepMarkerAnnotation (numbered circles).
 
@@ -342,6 +380,7 @@ public enum AnnotationTool: CaseIterable {
     case arrow
     case pen
     case highlighter
+    case select    // not a drawing tool: click an annotation to select it, drag to move, Delete removes
     case text      // placed by a click, typed inline (see CanvasView); not a drag shape
 
     /// Builds the shape from the mouse path of a drag (first point = mouse down, last = current position).
@@ -355,6 +394,7 @@ public enum AnnotationTool: CaseIterable {
         case .pen:         return PenAnnotation(points: points, style: style)
         case .highlighter: return HighlightAnnotation(rect: Geometry.normalizedRect(from: a, to: b), style: style)
         case .text:        return TextAnnotation(origin: a, text: "", style: style)   // placeholder; see CanvasView
+        case .select:      return RectAnnotation(rect: .zero, style: style)           // placeholder; never drawn
         }
     }
 
@@ -369,7 +409,7 @@ public enum AnnotationTool: CaseIterable {
         case .rectangle, .ellipse, .highlighter: return abs(a.x - b.x) >= 2 && abs(a.y - b.y) >= 2
         case .line, .arrow:                      return hypot(a.x - b.x, a.y - b.y) >= 3
         case .pen:                               return true      // even a click leaves a dot
-        case .text:                              return false     // never created by dragging
+        case .text, .select:                     return false     // never created by dragging
         }
     }
 

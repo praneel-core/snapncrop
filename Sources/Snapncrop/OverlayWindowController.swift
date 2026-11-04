@@ -136,13 +136,15 @@ final class OverlayView: NSView {
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 53: session.cancel()                                          // Esc
+        case 51, 117:                                                      // Delete / Forward delete
+            if session.state == .editing { session.deleteSelected() }
         case 36, 76: if session.state == .editing { session.copyAndClose() } // Return / Enter
         case 8 where session.state == .editing && event.modifierFlags.contains(.control):  // Ctrl+C
             session.copyAndClose()
         case 1 where session.state == .editing && event.modifierFlags.contains(.control):  // Ctrl+S
             session.saveAndClose()
         default:
-            // Tool shortcuts (plain letters while editing): R rectangle, E ellipse, L line, A arrow, P pen, H highlighter, T text
+            // Tool shortcuts (plain letters while editing): R rectangle, E ellipse, L line, A arrow, P pen, H highlighter, T text, V select
             if session.state == .editing, event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
                let key = event.charactersIgnoringModifiers?.lowercased() {
                 switch key {
@@ -153,6 +155,7 @@ final class OverlayView: NSView {
                 case "p": session.setTool(.pen); return
                 case "h": session.setTool(.highlighter); return
                 case "t": session.setTool(.text); return
+                case "v": session.setTool(.select); return
                 default: break
                 }
             }

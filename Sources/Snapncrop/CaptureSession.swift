@@ -32,7 +32,37 @@ final class CaptureSession {
         didSet { SettingsStore.shared.strokeColor = style.color; SettingsStore.shared.strokeWidth = style.width }
     }
     private(set) var tool: AnnotationTool = .rectangle
-    func setTool(_ t: AnnotationTool) { finishTextEditing(); tool = t; toolbar?.refreshTool(t) }
+    func setTool(_ t: AnnotationTool) {
+        finishTextEditing()
+        tool = t
+        if t != .select { selectedID = nil }
+        toolbar?.refreshTool(t)
+        canvas?.toolChanged()
+    }
+
+    // Selection (Select tool): which annotation is highlighted for moving / deleting.
+    private(set) var selectedID: UUID?
+    func select(_ id: UUID?) { selectedID = id; canvas?.needsDisplay = true }
+    var selectedAnnotation: (any Annotation)? { annotations.first { $0.id == selectedID } }
+
+    /// Commit a moved/edited annotation (undoable as one step).
+    func replace(_ updated: any Annotation) {
+        history.commit(AnnotationList.replacing(updated, in: annotations))
+        canvas?.needsDisplay = true
+        refreshToolbar()
+    }
+
+    func deleteSelected() {
+        guard let id = selectedID else { return }
+        history.commit(AnnotationList.removing(id: id, from: annotations))
+        selectedID = nil
+        canvas?.needsDisplay = true
+        refreshToolbar()
+    }
+
+    private func dropStaleSelection() {
+        if let id = selectedID, !annotations.contains(where: { $0.id == id }) { selectedID = nil }
+    }
 
     // Text typing is owned by the canvas; the session just makes sure it is finished before output.
     var isEditingText: Bool { canvas?.isEditingText ?? false }
@@ -109,8 +139,8 @@ final class CaptureSession {
         canvas?.needsDisplay = true
         refreshToolbar()
     }
-    func undo() { if isEditingText { canvas?.cancelText(); return }; if history.undo() { canvas?.needsDisplay = true; refreshToolbar() } }
-    func redo() { finishTextEditing(); if history.redo() { canvas?.needsDisplay = true; refreshToolbar() } }
+    func undo() { if isEditingText { canvas?.cancelText(); return }; if history.undo() { dropStaleSelection(); canvas?.needsDisplay = true; refreshToolbar() } }
+    func redo() { finishTextEditing(); if history.redo() { dropStaleSelection(); canvas?.needsDisplay = true; refreshToolbar() } }
     func refreshToolbar() { toolbar?.refresh(canUndo: history.canUndo, canRedo: history.canRedo) }
 
     // MARK: output
