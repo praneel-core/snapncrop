@@ -31,7 +31,8 @@ final class CaptureSession {
     var style = StrokeStyle(color: SettingsStore.shared.strokeColor, width: SettingsStore.shared.strokeWidth) {
         didSet { SettingsStore.shared.strokeColor = style.color; SettingsStore.shared.strokeWidth = style.width }
     }
-    var tool: AnnotationTool = .rectangle
+    private(set) var tool: AnnotationTool = .rectangle
+    func setTool(_ t: AnnotationTool) { tool = t; toolbar?.refreshTool(t) }
     var annotations: [any Annotation] { history.current }
     var canvas: CanvasView?
 

@@ -29,6 +29,7 @@ final class ToolbarPanel: NSPanel {
     private let undoButton = NSButton()
     private let redoButton = NSButton()
     private var swatches: [SwatchButton] = []
+    private var toolButtons: [(tool: AnnotationTool, button: NSButton)] = []
     private let widthControl = NSSegmentedControl(labels: ["S", "M", "L"], trackingMode: .selectOne,
                                                   target: nil, action: nil)
     private let widths: [CGFloat] = [2, 4, 8]
@@ -52,9 +53,17 @@ final class ToolbarPanel: NSPanel {
     }
 
     private func buildUI() {
-        // Tool (Phase 1: only rectangle exists; the others arrive in Phase 2).
-        let rectTool = symbolButton("rectangle", tip: "Rectangle", action: #selector(noop))
-        rectTool.state = .on; rectTool.setButtonType(.pushOnPushOff)
+        // Tools. To add one: new case in AnnotationTool + a row here.
+        let toolDefs: [(AnnotationTool, String, String)] = [
+            (.rectangle, "rectangle", "Rectangle (R)"),
+            (.ellipse, "circle", "Ellipse (E)"),
+        ]
+        for (i, d) in toolDefs.enumerated() {
+            let b = symbolButton(d.1, tip: d.2, action: #selector(pickTool(_:)))
+            b.tag = i; b.setButtonType(.pushOnPushOff)
+            toolButtons.append((d.0, b))
+        }
+        refreshTool(session.tool)
 
         for (i, c) in palette.enumerated() {
             let s = SwatchButton(); s.color = c; s.tag = i; s.isBordered = false; s.title = ""
@@ -79,7 +88,7 @@ final class ToolbarPanel: NSPanel {
         let cancel = NSButton(title: "Cancel", target: self, action: #selector(doCancel))
         cancel.bezelStyle = .rounded; cancel.toolTip = "Cancel (Esc)"
 
-        let views: [NSView] = [rectTool, divider()] + swatches + [widthControl, divider(), undoButton, redoButton,
+        let views: [NSView] = toolButtons.map { $0.button } + [divider()] + swatches + [widthControl, divider(), undoButton, redoButton,
                                                                    divider(), copy, save, cancel]
         let stack = NSStackView(views: views)
         stack.orientation = .horizontal; stack.spacing = 6; stack.alignment = .centerY
@@ -111,7 +120,13 @@ final class ToolbarPanel: NSPanel {
         undoButton.isEnabled = canUndo; redoButton.isEnabled = canRedo
     }
 
-    @objc private func noop() { /* only one tool in Phase 1 */ }
+    func refreshTool(_ t: AnnotationTool) {
+        for (tool, b) in toolButtons { b.state = (tool == t) ? .on : .off }
+    }
+    @objc private func pickTool(_ b: NSButton) {
+        session.setTool(toolButtons[b.tag].tool)
+        refreshTool(session.tool)    // keep the clicked button lit even if clicked twice
+    }
     @objc private func pickColor(_ s: SwatchButton) {
         session.style.color = palette[s.tag]
         swatches.forEach { $0.isChosen = ($0 === s) }

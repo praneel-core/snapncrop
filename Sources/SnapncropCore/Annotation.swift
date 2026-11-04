@@ -66,13 +66,55 @@ public struct RectAnnotation: Annotation {
     }
 }
 
+// MARK: - Ellipse
+
+public struct EllipseAnnotation: Annotation {
+    public let id: UUID
+    public var style: StrokeStyle
+    public var rect: CGRect   // bounding box of the ellipse
+
+    public init(id: UUID = UUID(), rect: CGRect, style: StrokeStyle) {
+        self.id = id; self.rect = rect; self.style = style
+    }
+
+    public func draw(in ctx: CGContext) {
+        ctx.saveGState()
+        ctx.setStrokeColor(style.color.cgColor)
+        ctx.setLineWidth(style.width)
+        ctx.strokeEllipse(in: rect)
+        ctx.restoreGState()
+    }
+
+    /// Outline-only hit test using the ellipse equation: points near the curve count.
+    public func hitTest(_ point: CGPoint, tolerance: CGFloat) -> Bool {
+        let a = rect.width / 2, b = rect.height / 2
+        guard a > 0, b > 0 else { return false }
+        let nx = (point.x - rect.midX) / a, ny = (point.y - rect.midY) / b
+        let distanceFromCurve = abs(sqrt(nx * nx + ny * ny) - 1) * min(a, b)
+        return distanceFromCurve <= tolerance + style.width / 2
+    }
+
+    public mutating func translate(by delta: CGSize) {
+        rect = rect.offsetBy(dx: delta.width, dy: delta.height)
+    }
+}
+
 // MARK: - Phase 2 / 3 stubs (not built yet; each is one small struct like RectAnnotation)
-// TODO(Phase 2): EllipseAnnotation, LineAnnotation, ArrowAnnotation, PenAnnotation (points array),
+// TODO(Phase 2): LineAnnotation, ArrowAnnotation, PenAnnotation (points array),
 //                HighlightAnnotation (translucent filled rect), TextAnnotation.
 // TODO(Phase 3): BlurAnnotation (pixelate the underlying crop), StepMarkerAnnotation (numbered circles).
 
-/// Tools shown in the toolbar. Only `.rectangle` exists in Phase 1.
+/// Tools shown in the toolbar. Add a case here, then a branch in `makeShape`, and the toolbar/keys follow.
 public enum AnnotationTool: CaseIterable {
     case rectangle
-    // TODO(Phase 2): ellipse, line, arrow, pen, highlighter, text
+    case ellipse
+    // TODO(Phase 2): line, arrow, pen, highlighter, text
+
+    /// Builds the shape for a drag-to-draw tool from the bounding box of the drag.
+    public func makeShape(rect: CGRect, style: StrokeStyle) -> any Annotation {
+        switch self {
+        case .rectangle: return RectAnnotation(rect: rect, style: style)
+        case .ellipse:   return EllipseAnnotation(rect: rect, style: style)
+        }
+    }
 }

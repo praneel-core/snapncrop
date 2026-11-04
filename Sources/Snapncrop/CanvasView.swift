@@ -8,7 +8,8 @@ final class CanvasView: NSView {
     private let image: CGImage
     private unowned let session: CaptureSession
     private var dragStart: CGPoint?
-    private var preview: RectAnnotation?
+    private var dragEnd: CGRect?          // bounding box of the current drag
+    private var preview: (any Annotation)?
 
     init(frame: CGRect, image: CGImage, session: CaptureSession) {
         self.image = image; self.session = session
@@ -27,7 +28,7 @@ final class CanvasView: NSView {
         preview?.draw(in: ctx)
     }
 
-    // MARK: tool input (Phase 1: rectangle only)
+    // MARK: tool input (drag-to-draw shapes; the tool comes from the session)
 
     override func mouseDown(with event: NSEvent) {
         dragStart = convert(event.locationInWindow, from: nil)
@@ -36,13 +37,14 @@ final class CanvasView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let start = dragStart else { return }
         let p = convert(event.locationInWindow, from: nil)
-        preview = RectAnnotation(rect: Geometry.normalizedRect(from: start, to: p), style: session.style)
+        dragEnd = Geometry.normalizedRect(from: start, to: p)
+        preview = session.tool.makeShape(rect: Geometry.normalizedRect(from: start, to: p), style: session.style)
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
-        defer { dragStart = nil; preview = nil; needsDisplay = true }
-        guard let p = preview, p.rect.width >= 2, p.rect.height >= 2 else { return }
-        session.commit(p)
+        defer { dragStart = nil; dragEnd = nil; preview = nil; needsDisplay = true }
+        guard let shape = preview, let end = dragEnd, end.width >= 2, end.height >= 2 else { return }
+        session.commit(shape)
     }
 }

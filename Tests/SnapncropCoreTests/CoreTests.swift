@@ -143,6 +143,27 @@ private func pixel(_ image: CGImage, _ x: Int, _ y: Int) -> (Int, Int, Int) {
         #expect(beyond.1 > 240)
     }
 
+    @Test func ellipseIsBurnedIntoCorrectPixels() {
+        let frozen = solidImage(width: 200, height: 200)   // 100x100 pt at 2x
+        let e = EllipseAnnotation(rect: CGRect(x: 10, y: 10, width: 80, height: 60),
+                                  style: StrokeStyle(color: RGBA(1, 0, 0), width: 4))
+        let out = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: 200, height: 200),
+                                        selectionSize: CGSize(width: 100, height: 100), annotations: [e])!
+        let top = pixel(out, 100, 20)        // top of the ellipse: x = midX (50pt), y = 10pt
+        #expect(top.0 > 200 && top.1 < 60 && top.2 < 60, "expected red at the ellipse top, got \(top)")
+        let corner = pixel(out, 24, 24)      // inside the bounding box corner, outside the curve
+        #expect(corner.0 > 240 && corner.1 > 240 && corner.2 > 240)
+        let centre = pixel(out, 100, 80)
+        #expect(centre.1 > 240)              // not filled
+    }
+
+    @Test func ellipseHitTestAndTool() {
+        let e = EllipseAnnotation(rect: CGRect(x: 0, y: 0, width: 100, height: 60), style: .default)
+        #expect(e.hitTest(CGPoint(x: 50, y: 0), tolerance: 3))
+        #expect(!e.hitTest(CGPoint(x: 50, y: 30), tolerance: 3))
+        #expect(AnnotationTool.ellipse.makeShape(rect: .init(x: 0, y: 0, width: 5, height: 5), style: .default) is EllipseAnnotation)
+    }
+
     @Test func pngRoundTrip() throws {
         let img = solidImage(width: 40, height: 30)
         let data = try #require(ExportRenderer.pngData(from: img, scale: 2))
