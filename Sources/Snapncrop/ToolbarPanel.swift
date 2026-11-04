@@ -122,12 +122,13 @@ final class ToolbarPanel: NSPanel {
             b.hint = tip; b.hintOwner = self
         }
 
+        let ocr = symbolButton("text.viewfinder", hint: "Copy the TEXT in this area (OCR)  ·  Ctrl+T", action: #selector(doOCR))
         let copy = textButton("Copy", hint: "Copy to clipboard  ·  Ctrl+C", action: #selector(doCopy))
         let save = textButton("Save", hint: "Save to Screenshots folder  ·  Ctrl+S", action: #selector(doSave))
         let cancel = textButton("Cancel", hint: "Cancel  ·  Esc", action: #selector(doCancel))
 
         let views: [NSView] = toolButtons.map { $0.button } + [divider()] + swatches + [widthControl, divider(), undoButton, redoButton,
-                                                                   divider(), copy, save, cancel]
+                                                                   divider(), ocr, copy, save, cancel]
         let stack = NSStackView(views: views)
         stack.orientation = .horizontal; stack.spacing = 6; stack.alignment = .centerY
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
@@ -216,6 +217,7 @@ final class ToolbarPanel: NSPanel {
     @objc private func pickWidth(_ c: NSSegmentedControl) { session.setWidth(widths[c.selectedSegment]) }
     @objc private func doUndo() { session.undo() }
     @objc private func doRedo() { session.redo() }
+    @objc private func doOCR() { session.copyTextAndClose() }
     @objc private func doCopy() { session.copyAndClose() }
     @objc private func doSave() { session.saveAndClose() }
     @objc private func doCancel() { session.cancel() }

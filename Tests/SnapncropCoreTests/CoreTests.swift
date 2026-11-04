@@ -779,3 +779,37 @@ private func stripedImage(width: Int, height: Int) -> CGImage {
         #expect(RGBA.yellow.luminance > 0.6 && RGBA.red.luminance < 0.6 && RGBA.black.luminance == 0)
     }
 }
+
+// MARK: OCR
+
+@Suite struct OCRTests {
+    @Test func readingOrderTopToBottomThenLeftToRight() {
+        // Vision boxes: y grows upward, so a larger y is higher on the page.
+        let lines = [
+            RecognizedLine(text: "third line", box: CGRect(x: 0.1, y: 0.20, width: 0.5, height: 0.08)),
+            RecognizedLine(text: "Name", box: CGRect(x: 0.1, y: 0.80, width: 0.2, height: 0.08)),
+            RecognizedLine(text: "Amount", box: CGRect(x: 0.6, y: 0.81, width: 0.2, height: 0.08)),   // same row as "Name"
+            RecognizedLine(text: "second line", box: CGRect(x: 0.1, y: 0.50, width: 0.5, height: 0.08)),
+        ]
+        #expect(TextLayout.join(lines) == "Name Amount\nsecond line\nthird line")
+        #expect(TextLayout.join([]) == "")
+    }
+
+    @Test func visionReadsTextWeDrawOurselves() {
+        // Render big black text on white with our own TextAnnotation, then run the real recogniser on it.
+        let frozen = solidImage(width: 1200, height: 300)
+        let t = TextAnnotation(origin: CGPoint(x: 20, y: 20), text: "Invoice 4821\nTotal due",
+                               style: StrokeStyle(color: RGBA(0, 0, 0), width: 8))                // 36pt
+        let img = ExportRenderer.render(frozen: frozen, pixelCrop: CGRect(x: 0, y: 0, width: 1200, height: 300),
+                                        selectionSize: CGSize(width: 600, height: 150), annotations: [t])!
+        let text = TextRecognizer.recognize(img)
+        #expect(text.localizedCaseInsensitiveContains("invoice"), "OCR output was: \(text)")
+        #expect(text.contains("4821"), "OCR output was: \(text)")
+        #expect(text.localizedCaseInsensitiveContains("total"), "OCR output was: \(text)")
+        #expect(text.contains("\n"), "two lines should stay on two lines: \(text)")
+    }
+
+    @Test func blankImageGivesEmptyString() {
+        #expect(TextRecognizer.recognize(solidImage(width: 200, height: 100)) == "")
+    }
+}

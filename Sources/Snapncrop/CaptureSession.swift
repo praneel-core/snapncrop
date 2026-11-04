@@ -189,6 +189,36 @@ final class CaptureSession {
         return ExportRenderer.pngData(from: img, scale: shot.scale)
     }
 
+    // MARK: OCR (copy the text in the selection)
+
+    private var recognizing = false
+
+    /// Reads the text in the selected region (from the ORIGINAL pixels, without your annotations)
+    /// and puts it on the clipboard. Runs on a background thread; the overlay stays up meanwhile.
+    func copyTextAndClose() {
+        finishTextEditing()
+        guard state == .editing, !recognizing, let shot = activeShot, let sel = selection, let crop = pixelCrop,
+              let image = shot.image.cropping(to: crop) else { return }
+        recognizing = true
+        let centre = NSPoint(x: shot.frame.minX + sel.midX, y: shot.frame.maxY - sel.midY)   // selection centre, screen coords
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let text = TextRecognizer.recognize(image).trimmingCharacters(in: .whitespacesAndNewlines)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.recognizing = false
+                guard self.state == .editing else { return }             // cancelled while reading
+                if text.isEmpty {
+                    Toast.show("No text found", at: centre)              // stay in the editor so you can adjust the crop
+                } else {
+                    ExportService.copyText(text)
+                    Log.capture.info("copied \(text.count) characters of text")
+                    self.end(.finished)
+                    Toast.show("Copied \(text.count) characters", at: centre)
+                }
+            }
+        }
+    }
+
     func copyAndClose() {
         finishTextEditing()
         guard let png = renderPNG() else { fail("Could not render the screenshot."); return }

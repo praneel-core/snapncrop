@@ -8,6 +8,12 @@ enum ExportService {
         pb.setData(png, forType: .png)
     }
 
+    static func copyText(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+    }
+
     /// Saves "Snapncrop 2026-11-05 at 14.03.22.png" into the default folder (created if missing).
     @discardableResult
     static func save(png: Data, folder: URL = SettingsStore.shared.saveFolder) throws -> URL {

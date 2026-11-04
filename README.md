@@ -11,6 +11,7 @@ Repo: https://github.com/praneel-core/snapncrop
 | Annotate | rectangle tool (colour + stroke width in the toolbar); ⌘Z / ⇧⌘Z undo/redo |
 | **Copy to clipboard** | **Ctrl+C** (also ⌘C, Return, or the Copy button) |
 | **Save** | **Ctrl+S** (also ⌘S or Save button) → `~/Pictures/Screenshots/Snapncrop <date> at <time>.png` |
+| **Copy the text** in the selection (OCR) | **Ctrl+T**, or the text-viewfinder button. Runs on-device with Apple's Vision framework |
 | Cancel | Esc |
 
 ## Menu bar menu
