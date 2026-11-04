@@ -28,9 +28,11 @@ CNF
 # -legacy / -certpbe keep the .p12 readable by macOS's `security` tool (LibreSSL or OpenSSL 3).
 openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -config "$TMP/openssl.cnf" \
   -keyout "$TMP/key.pem" -out "$TMP/cert.pem" 2>/dev/null
-openssl pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" -out "$TMP/id.p12" \
-  -passout pass:snapncrop -name "$NAME" 2>/dev/null || \
+# Homebrew's OpenSSL 3/4 needs -legacy so macOS's `security` can read the file; macOS's own
+# LibreSSL doesn't know that flag, so fall back to the plain command.
 openssl pkcs12 -export -legacy -inkey "$TMP/key.pem" -in "$TMP/cert.pem" -out "$TMP/id.p12" \
+  -passout pass:snapncrop -name "$NAME" 2>/dev/null || \
+openssl pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" -out "$TMP/id.p12" \
   -passout pass:snapncrop -name "$NAME"
 
 security import "$TMP/id.p12" -k "$KEYCHAIN" -P snapncrop -T /usr/bin/codesign
