@@ -623,3 +623,27 @@ private func fire(_ d: inout FourFingerTapDetector, _ t: [TouchPoint], _ ts: Dou
         #expect((h.current[0] as? TextAnnotation)?.text == "Gone")
     }
 }
+
+// MARK: shortcut
+
+@Suite struct ShortcutTests {
+    @Test func defaultIsControlOptionS() {
+        #expect(Shortcut.default.description == "⌃⌥S")
+        #expect(Shortcut.default.isValid)
+    }
+
+    @Test func descriptionUsesMacOSModifierOrder() {
+        let all = Shortcut(keyCode: 8, modifiers: Shortcut.command | Shortcut.shift | Shortcut.option | Shortcut.control)
+        #expect(all.description == "⌃⌥⇧⌘C")
+        #expect(Shortcut(keyCode: 49, modifiers: Shortcut.command).description == "⌘Space")
+        #expect(Shortcut(keyCode: 122, modifiers: 0).description == "F1")
+    }
+
+    @Test func validityRules() {
+        #expect(!Shortcut(keyCode: 1, modifiers: 0).isValid)                       // plain S would break typing
+        #expect(!Shortcut(keyCode: 1, modifiers: Shortcut.shift).isValid)          // shift alone isn't enough
+        #expect(Shortcut(keyCode: 1, modifiers: Shortcut.command).isValid)
+        #expect(Shortcut(keyCode: 111, modifiers: 0).isValid)                      // F12 alone is fine
+        #expect(!Shortcut(keyCode: 9999, modifiers: Shortcut.control).isValid)     // unknown key
+    }
+}

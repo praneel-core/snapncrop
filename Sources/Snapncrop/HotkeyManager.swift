@@ -1,4 +1,5 @@
 import Carbon.HIToolbox
+import SnapncropCore
 
 /// Global hotkey via Carbon's RegisterEventHotKey. Unlike an event tap, it needs NO
 /// Accessibility / Input Monitoring permission, and it swallows the key combo system-wide.
@@ -6,6 +7,9 @@ final class HotkeyManager {
     var onPress: (() -> Void)?
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
+
+    @discardableResult
+    func register(_ shortcut: Shortcut) -> Bool { register(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers) }
 
     /// Default: Control + Option + S.
     @discardableResult

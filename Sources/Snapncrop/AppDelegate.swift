@@ -5,14 +5,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotkey = HotkeyManager()
     private var statusItem: StatusItemController!
     private let gesture: GestureTrigger = MultitouchGestureTrigger()
+    private let prefsModel = PreferencesModel()
+    private lazy var prefsWindow = PreferencesWindowController(model: prefsModel)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = StatusItemController(router: router)
 
         hotkey.onPress = { [router] in router.fire(.hotkey) }
-        if !hotkey.register() {
-            Log.app.error("Control+Option+S could not be registered; menu and URL triggers still work")
+        if !hotkey.register(SettingsStore.shared.shortcut) {
+            Log.app.error("\(SettingsStore.shared.shortcut.description) could not be registered; menu and URL triggers still work")
         }
+
+        // Preferences window <-> running app
+        statusItem.onPreferences = { [weak self] in self?.prefsWindow.show() }
+        prefsModel.onTryShortcut = { [weak self] new in
+            guard let self else { return false }
+            if self.hotkey.register(new) { return true }
+            self.hotkey.register(SettingsStore.shared.shortcut)       // put the old one back
+            return false
+        }
+        prefsModel.onRecordingChanged = { [weak self] recording in
+            guard let self else { return }
+            if recording { self.hotkey.unregister() }                 // so pressing the old combo doesn't start a capture
+            else { self.hotkey.register(SettingsStore.shared.shortcut) }
+        }
+        prefsModel.onGestureChanged = { [weak self] on in self?.applyGestureSetting(on) }
 
         gesture.onTrigger = { [router] in router.fire(.gesture) }
         gesture.onFingerCount = { [weak self] n in

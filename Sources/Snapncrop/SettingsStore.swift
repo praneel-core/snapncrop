@@ -14,6 +14,15 @@ final class SettingsStore {
         set { d.set(newValue.path, forKey: "saveFolder") }
     }
 
+    /// Global capture shortcut (default ⌃⌥S).
+    var shortcut: Shortcut {
+        get {
+            guard d.object(forKey: "shortcutKey") != nil else { return .default }
+            return Shortcut(keyCode: UInt32(d.integer(forKey: "shortcutKey")), modifiers: UInt32(d.integer(forKey: "shortcutMods")))
+        }
+        set { d.set(Int(newValue.keyCode), forKey: "shortcutKey"); d.set(Int(newValue.modifiers), forKey: "shortcutMods") }
+    }
+
     var gestureEnabled: Bool {
         get { d.object(forKey: "gestureEnabled") as? Bool ?? true }
         set { d.set(newValue, forKey: "gestureEnabled") }

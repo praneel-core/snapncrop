@@ -17,6 +17,7 @@ Repo: https://github.com/praneel-core/snapncrop
 - **Status line:** "● Snapncrop is on" normally; turns into a clickable "Screen Recording permission needed" when it can't capture.
 - **Capture**, then **Recent screenshots** (last 5, in memory only; click one to copy it again).
 - Toggles that are remembered: four-finger tap, also save a file when copying, launch at login, finger-count tuning.
+- **Preferences… (⌘,)**: record your own capture shortcut, choose the screenshots folder, set default colour and width, and the toggles.
 - Open screenshots folder, About, Quit. The icon turns bold while a capture is in progress.
 
 ## Build & run (needs only Command Line Tools)
