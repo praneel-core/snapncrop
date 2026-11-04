@@ -7,7 +7,7 @@ Repo: https://github.com/praneel-core/snapncrop
 | Action | How |
 |---|---|
 | Start a capture | **⌃⌥S**, menu bar icon → Capture, `open snapncrop://capture`, or **four-finger tap** on the trackpad |
-| Select | drag a region |
+| Select | drag a region, **or hover a window and click** to capture exactly that window (switch off in Preferences) |
 | Annotate | rectangle tool (colour + stroke width in the toolbar); ⌘Z / ⇧⌘Z undo/redo |
 | **Copy to clipboard** | **Ctrl+C** (also ⌘C, Return, or the Copy button) |
 | **Save** | **Ctrl+S** (also ⌘S or Save button) → `~/Pictures/Screenshots/Snapncrop <date> at <time>.png` |

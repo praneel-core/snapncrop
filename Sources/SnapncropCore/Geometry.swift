@@ -143,3 +143,20 @@ public enum PinGeometry {
         return CGRect(x: f.midX - w / 2, y: f.midY - h / 2, width: w, height: h)
     }
 }
+
+/// Maths for "click a window to select it".
+public enum WindowSnap {
+    /// A window's rectangle (global, top-left origin, as CoreGraphics reports it) -> the same rectangle in
+    /// the local space of one display, clipped to that display. Nil if it isn't really on this display
+    /// or is too small to be a real window.
+    public static func localRect(windowBounds: CGRect, displayBounds: CGRect, minSize: CGFloat = 40) -> CGRect? {
+        let clipped = windowBounds.intersection(displayBounds)
+        guard !clipped.isNull, clipped.width >= minSize, clipped.height >= minSize else { return nil }
+        return clipped.offsetBy(dx: -displayBounds.minX, dy: -displayBounds.minY)
+    }
+
+    /// The frontmost window under `point`. `rects` must be ordered front to back.
+    public static func topmost(at point: CGPoint, in rects: [CGRect]) -> CGRect? {
+        rects.first { $0.contains(point) }
+    }
+}

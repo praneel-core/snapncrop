@@ -839,3 +839,35 @@ private func stripedImage(width: Int, height: Int) -> CGImage {
         #expect(PinGeometry.resized(f, factor: 0, maxSize: screen) == f)                    // nonsense input is ignored
     }
 }
+
+// MARK: window snap
+
+@Suite struct WindowSnapTests {
+    @Test func windowOnASecondDisplayBecomesDisplayLocal() {
+        let display2 = CGRect(x: 1440, y: 0, width: 1920, height: 1080)
+        let local = WindowSnap.localRect(windowBounds: CGRect(x: 1500, y: 100, width: 600, height: 400), displayBounds: display2)
+        #expect(local == CGRect(x: 60, y: 100, width: 600, height: 400))
+        // The same window is not on the first display.
+        #expect(WindowSnap.localRect(windowBounds: CGRect(x: 1500, y: 100, width: 600, height: 400),
+                                     displayBounds: CGRect(x: 0, y: 0, width: 1440, height: 900)) == nil)
+    }
+
+    @Test func windowsHangingOffTheEdgeAreClipped() {
+        let display = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let local = WindowSnap.localRect(windowBounds: CGRect(x: -100, y: 700, width: 400, height: 300), displayBounds: display)
+        #expect(local == CGRect(x: 0, y: 700, width: 300, height: 100))
+    }
+
+    @Test func tinyWindowsAreIgnored() {
+        let display = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        #expect(WindowSnap.localRect(windowBounds: CGRect(x: 10, y: 10, width: 20, height: 300), displayBounds: display) == nil)
+    }
+
+    @Test func frontmostWindowWins() {
+        let front = CGRect(x: 100, y: 100, width: 200, height: 200)
+        let back = CGRect(x: 0, y: 0, width: 600, height: 600)
+        #expect(WindowSnap.topmost(at: CGPoint(x: 150, y: 150), in: [front, back]) == front)    // overlap -> front
+        #expect(WindowSnap.topmost(at: CGPoint(x: 500, y: 500), in: [front, back]) == back)
+        #expect(WindowSnap.topmost(at: CGPoint(x: 900, y: 900), in: [front, back]) == nil)      // desktop
+    }
+}

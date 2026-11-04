@@ -12,6 +12,7 @@ final class PreferencesModel: ObservableObject {
     @Published var strokeWidth: CGFloat
     @Published var gestureEnabled: Bool
     @Published var alsoSaveOnCopy: Bool
+    @Published var windowSnap: Bool
     @Published var launchAtLogin: Bool
     @Published var loginMessage: String?
 
@@ -29,6 +30,7 @@ final class PreferencesModel: ObservableObject {
         shortcut = store.shortcut; saveFolder = store.saveFolder
         strokeColor = store.strokeColor; strokeWidth = store.strokeWidth
         gestureEnabled = store.gestureEnabled; alsoSaveOnCopy = store.alsoSaveOnCopy
+        windowSnap = store.windowSnap
         launchAtLogin = LoginItem.isEnabled
     }
 
@@ -37,6 +39,7 @@ final class PreferencesModel: ObservableObject {
         shortcut = store.shortcut; saveFolder = store.saveFolder
         strokeColor = store.strokeColor; strokeWidth = store.strokeWidth
         gestureEnabled = store.gestureEnabled; alsoSaveOnCopy = store.alsoSaveOnCopy
+        windowSnap = store.windowSnap
         launchAtLogin = LoginItem.isEnabled
         shortcutMessage = nil; loginMessage = nil
     }
@@ -68,6 +71,7 @@ final class PreferencesModel: ObservableObject {
     func setColor(_ c: RGBA) { strokeColor = c; store.strokeColor = c }
     func setWidth(_ w: CGFloat) { strokeWidth = w; store.strokeWidth = w }
     func setGesture(_ on: Bool) { gestureEnabled = on; store.gestureEnabled = on; onGestureChanged?(on) }
+    func setWindowSnap(_ on: Bool) { windowSnap = on; store.windowSnap = on }
     func setAlsoSave(_ on: Bool) { alsoSaveOnCopy = on; store.alsoSaveOnCopy = on }
 
     func setLaunchAtLogin(_ on: Bool) {

@@ -23,6 +23,12 @@ final class SettingsStore {
         set { d.set(Int(newValue.keyCode), forKey: "shortcutKey"); d.set(Int(newValue.modifiers), forKey: "shortcutMods") }
     }
 
+    /// Clicking (without dragging) while selecting captures the window under the pointer.
+    var windowSnap: Bool {
+        get { d.object(forKey: "windowSnap") as? Bool ?? true }
+        set { d.set(newValue, forKey: "windowSnap") }
+    }
+
     var gestureEnabled: Bool {
         get { d.object(forKey: "gestureEnabled") as? Bool ?? true }
         set { d.set(newValue, forKey: "gestureEnabled") }

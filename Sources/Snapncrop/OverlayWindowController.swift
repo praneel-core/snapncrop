@@ -27,7 +27,7 @@ final class OverlayWindowController {
         window.acceptsMouseMovedEvents = true
     }
 
-    func showWindow() { window.orderFrontRegardless() }
+    func showWindow() { window.orderFrontRegardless(); view.refreshHover() }
     func makeKey() { window.makeKeyAndOrderFront(nil); window.makeFirstResponder(view) }
     func close() { window.orderOut(nil); window.contentView = nil; window.close() }
 
@@ -66,10 +66,19 @@ final class OverlayView: NSView {
         // Dim everything except the selection (even-odd fill leaves a clear hole).
         ctx.setFillColor(CGColor(gray: 0, alpha: fullyDimmed ? 0.6 : 0.45))
         ctx.addRect(bounds)
-        if let s = selection { ctx.addRect(s) }
+        if let s = selection ?? hoverRect { ctx.addRect(s) }
         ctx.drawPath(using: .eoFill)
 
-        guard let s = selection else { return }
+        guard let s = selection else {
+            // Window snap preview: bright outline around the window under the pointer.
+            if let h = hoverRect {
+                ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
+                ctx.setLineWidth(3)
+                ctx.stroke(h.insetBy(dx: 1.5, dy: 1.5))
+                drawSizeLabel(for: h)
+            }
+            return
+        }
         ctx.setStrokeColor(CGColor(gray: 1, alpha: 0.9))
         ctx.setLineWidth(1)
         ctx.stroke(s.insetBy(dx: -0.5, dy: -0.5))
@@ -98,10 +107,42 @@ final class OverlayView: NSView {
 
     private var isMySelection: Bool { session.activeShot == nil }
 
+    // MARK: window snap (hover a window, click to select it)
+
+    private var hoverRect: CGRect?
+    private var clickWindow: CGRect?             // the window under the pointer when the mouse went down
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self))
+    }
+
+    private func updateHover(at p: CGPoint?) {
+        var new: CGRect?
+        if session.state == .selecting, dragStart == nil, SettingsStore.shared.windowSnap, let p {
+            new = WindowSnap.topmost(at: p, in: shot.windows)
+        }
+        if new != hoverRect { hoverRect = new; needsDisplay = true }
+    }
+
+    /// Highlight the window already under the pointer when the overlay appears.
+    func refreshHover() {
+        let m = NSEvent.mouseLocation
+        guard shot.frame.contains(m) else { return }
+        updateHover(at: CGPoint(x: m.x - shot.frame.minX, y: shot.frame.maxY - m.y))      // screen -> top-left view space
+    }
+
+    override func mouseMoved(with event: NSEvent) { updateHover(at: convert(event.locationInWindow, from: nil)) }
+    override func mouseExited(with event: NSEvent) { updateHover(at: nil) }
+
     override func mouseDown(with event: NSEvent) {
         guard session.state == .selecting else { return }
         dragStart = convert(event.locationInWindow, from: nil)
         selection = nil
+        clickWindow = hoverRect          // remembered in case this turns out to be a click, not a drag
+        hoverRect = nil
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -114,9 +155,12 @@ final class OverlayView: NSView {
     override func mouseUp(with event: NSEvent) {
         guard session.state == .selecting, dragStart != nil else { return }
         dragStart = nil
-        guard let s = selection, s.width >= 4, s.height >= 4 else {   // a plain click: start over
-            selection = nil; needsDisplay = true; return
+        guard let s = selection, s.width >= 4, s.height >= 4 else {   // a plain click, not a drag
+            selection = nil
+            if let w = clickWindow { clickWindow = nil; session.finishSelection(w, on: shot); return }   // snap to the window
+            needsDisplay = true; return
         }
+        clickWindow = nil
         session.finishSelection(s, on: shot)
     }
 

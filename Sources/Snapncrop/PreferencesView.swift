@@ -91,6 +91,7 @@ struct PreferencesView: View {
             }
 
             Section("Behaviour") {
+                Toggle("Click a window to capture it (while selecting)", isOn: Binding(get: { model.windowSnap }, set: { model.setWindowSnap($0) }))
                 Toggle("Four-finger tap to capture", isOn: Binding(get: { model.gestureEnabled }, set: { model.setGesture($0) }))
                 Toggle("Also save a file when copying", isOn: Binding(get: { model.alsoSaveOnCopy }, set: { model.setAlsoSave($0) }))
                 Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
